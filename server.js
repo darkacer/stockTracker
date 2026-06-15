@@ -60,8 +60,8 @@ app.post('/api/transactions', async (req, res) => {
       return res.status(400).json({ error: 'Invalid transaction type' });
     }
 
-    if (quantity <= 0 || price <= 0) {
-      return res.status(400).json({ error: 'Quantity and price must be positive' });
+    if (quantity < 0 || price < 0) {
+      return res.status(400).json({ error: 'Quantity and price must not be negative' });
     }
 
     // For SELL transactions, validate user isn't selling more than they own
@@ -359,6 +359,77 @@ app.get('/api/stock-fundamentals/:ticker', async (req, res) => {
     res.json(data[0]);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch fundamentals' });
+  }
+});
+
+// POST /api/holdings-data - Batch fetch fundamentals + moving averages for multiple tickers
+app.post('/api/holdings-data', async (req, res) => {
+  try {
+    const { tickers, periods } = req.body;
+    if (!Array.isArray(tickers) || tickers.length === 0) {
+      return res.status(400).json({ error: 'tickers array is required' });
+    }
+
+    const maPeriods = (periods || '20,44').split(',').map(Number);
+
+    // Fetch all fundamentals in one query
+    const tickerFilter = tickers.map(t => encodeURIComponent(t)).join(',');
+    console.log('[holdings-data] tickers:', tickers, 'filter:', tickerFilter);
+    const fundResponse = await supabaseFetch(
+      `stocks_list?ticker=in.(${tickerFilter})&select=ticker,fifty_two_week_high,fifty_two_week_low,pe_ratio,current_price,fundamentals_updated_at`
+    );
+
+    const fundamentals = {};
+    if (fundResponse.ok) {
+      const fundData = await fundResponse.json();
+      console.log('[holdings-data] fundData count:', fundData.length);
+      fundData.forEach(f => { fundamentals[f.ticker] = f; });
+    } else {
+      console.error('[holdings-data] fund error:', fundResponse.status, await fundResponse.text());
+    }
+
+    // Fetch moving averages via Supabase RPC (computed in DB, no row limit)
+    let movingAverages = {};
+    try {
+      const maResponse = await supabaseFetch('rpc/get_moving_averages', {
+        method: 'POST',
+        body: JSON.stringify({ ticker_list: tickers, periods: maPeriods })
+      });
+      if (maResponse.ok) {
+        movingAverages = await maResponse.json() || {};
+      } else {
+        console.error('[holdings-data] MA RPC error:', maResponse.status, await maResponse.text());
+        // Fallback: per-ticker queries
+        await Promise.all(tickers.map(async (ticker) => {
+          try {
+            const candleResponse = await supabaseFetch(
+              `stock_candles?ticker=eq.${encodeURIComponent(ticker)}&order=candle_date.desc&limit=${Math.max(...maPeriods)}&select=candle_date,close`
+            );
+            if (candleResponse.ok) {
+              const candles = await candleResponse.json();
+              movingAverages[ticker] = {};
+              for (const period of maPeriods) {
+                if (candles.length >= period) {
+                  const slice = candles.slice(0, period);
+                  const sum = slice.reduce((acc, c) => acc + Number(c.close), 0);
+                  movingAverages[ticker][`MA${period}`] = Math.round((sum / period) * 100) / 100;
+                } else {
+                  movingAverages[ticker][`MA${period}`] = null;
+                }
+              }
+            }
+          } catch {}
+        }));
+      }
+    } catch (err) {
+      console.error('[holdings-data] MA error:', err.message);
+    }
+
+    console.log('[holdings-data] MA tickers processed:', Object.keys(movingAverages).length);
+
+    res.json({ fundamentals, movingAverages });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch holdings data' });
   }
 });
 

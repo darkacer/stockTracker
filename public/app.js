@@ -160,6 +160,7 @@ const totalPnlPctEl = document.getElementById('total-pnl-pct');
 
 const holdingsBody = document.getElementById('holdings-body');
 const holdingsEmpty = document.getElementById('holdings-empty');
+const holdingsLoading = document.getElementById('holdings-loading');
 const transactionsBody = document.getElementById('transactions-body');
 const transactionsEmpty = document.getElementById('transactions-empty');
 
@@ -305,7 +306,7 @@ form.addEventListener('submit', async (e) => {
     currency: currentLookupCurrency
   };
 
-  if (!payload.ticker || !payload.date || !payload.quantity || !payload.price) {
+  if (!payload.ticker || !payload.date || payload.quantity == null || isNaN(payload.quantity) || payload.price == null || isNaN(payload.price)) {
     showError('Please fill in all required fields.');
     return;
   }
@@ -362,6 +363,7 @@ function prefillTransaction(ticker, name, type, price, currency) {
 
 // --- Delete Transaction ---
 async function deleteTransaction(id) {
+  if (!confirm('Are you sure you want to delete this transaction?')) return;
   try {
     await apiDeleteTransaction(id);
     await loadDashboard();
@@ -424,6 +426,10 @@ function renderTransactionLog(transactions) {
 }
 
 async function renderHoldings(transactions) {
+  // Show loading spinner
+  holdingsLoading.classList.remove('hidden');
+  holdingsBody.innerHTML = '';
+
   // Aggregate by ticker
   const holdingsMap = {};
 
@@ -450,6 +456,7 @@ async function renderHoldings(transactions) {
 
   if (activeHoldings.length === 0) {
     holdingsBody.innerHTML = '';
+    holdingsLoading.classList.add('hidden');
     holdingsEmpty.classList.remove('hidden');
 
     // Still calculate realized P&L from all tickers (convert to INR)
@@ -467,53 +474,63 @@ async function renderHoldings(transactions) {
   }
 
   holdingsEmpty.classList.add('hidden');
+  holdingsLoading.classList.remove('hidden');
 
-  // Fetch current prices for all held tickers
+  // Fetch current prices, chandelier exit, and fundamentals+MA in parallel
   const prices = {};
   const priceCurrencies = {};
-  await Promise.all(activeHoldings.map(async (h) => {
-    try {
-      const data = await apiStockLookup(h.ticker);
-      if (data) {
-        prices[h.ticker] = data.price;
-        priceCurrencies[h.ticker] = data.currency;
-      } else {
-        prices[h.ticker] = null;
-      }
-    } catch {
-      prices[h.ticker] = null;
-    }
-  }));
-
-  // Fetch chandelier exit data from Supabase
   const chandelierData = {};
-  try {
-    const tickersForApi = activeHoldings.map(h => h.ticker);
-    const ceData = await apiChandelierExit(tickersForApi);
-    if (Array.isArray(ceData)) {
-      ceData.forEach(item => {
-        if (item.ticker && item.algo_chandelier_exit) {
-          chandelierData[item.ticker] = item.algo_chandelier_exit;
-        }
-      });
-    }
-  } catch {
-    // Chandelier exit data unavailable — continue without it
-  }
-
-  // Fetch fundamentals (52w high/low) and moving averages
   const fundamentalsData = {};
   const maData = {};
-  await Promise.all(activeHoldings.map(async (h) => {
-    try {
-      const [fund, ma] = await Promise.all([
-        apiStockFundamentals(h.ticker),
-        apiMovingAverage(h.ticker, '20,44')
-      ]);
-      if (fund) fundamentalsData[h.ticker] = fund;
-      if (ma) maData[h.ticker] = ma.movingAverages || {};
-    } catch {}
-  }));
+
+  const tickersForApi = activeHoldings.map(h => h.ticker);
+
+  await Promise.all([
+    // Batch: current prices from Yahoo
+    Promise.all(activeHoldings.map(async (h) => {
+      try {
+        const data = await apiStockLookup(h.ticker);
+        if (data) {
+          prices[h.ticker] = data.price;
+          priceCurrencies[h.ticker] = data.currency;
+        } else {
+          prices[h.ticker] = null;
+        }
+      } catch {
+        prices[h.ticker] = null;
+      }
+    })),
+    // Chandelier exit (single call)
+    (async () => {
+      try {
+        const ceData = await apiChandelierExit(tickersForApi);
+        if (Array.isArray(ceData)) {
+          ceData.forEach(item => {
+            if (item.ticker && item.algo_chandelier_exit) {
+              chandelierData[item.ticker] = item.algo_chandelier_exit;
+            }
+          });
+        }
+      } catch {}
+    })(),
+    // Batch fundamentals + moving averages (single call)
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/holdings-data`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tickers: tickersForApi, periods: '20,44' })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          Object.assign(fundamentalsData, data.fundamentals || {});
+          Object.assign(maData, data.movingAverages || {});
+        }
+      } catch {}
+    })()
+  ]);
+
+  holdingsLoading.classList.add('hidden');
 
   // Fetch exchange rates for all currencies involved
   const allCurrencies = [...new Set([

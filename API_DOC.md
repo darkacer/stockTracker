@@ -1,144 +1,256 @@
-# Stock Analysis Engine: API Documentation
+# Stock Tracker: API Documentation
 
-This documentation outlines the core endpoints for interacting with your Supabase-backed market analysis system. Use these endpoints to interface your Salesforce Apex backend or external tools with your stock registry and pre-computed Chandelier Exit indicators.
+All endpoints are served by the Express.js backend (`server.js`) which proxies to Supabase and Yahoo Finance.
 
-### Global Configuration
-
-* **Base URL:** `https://YOUR_PROJECT_ID.supabase.co/rest/v1`
-* **Authentication:** All requests must include standard Supabase security credentials.
-
-### Required HTTP Headers
-
-| Header | Value | Description |
-| --- | --- | --- |
-| `apikey` | `YOUR_SUPABASE_ANON_KEY` | Your project's public anonymous API key. |
-| `Authorization` | `Bearer YOUR_SUPABASE_ANON_KEY` | Bearer token authentication wrapper. |
-| `Content-Type` | `application/json` | Explicitly declares JSON payload delivery. |
+**Base URL:** `http://localhost:3500` (dev) or `https://stock-tracker-murex.vercel.app` (prod)
 
 ---
 
-## 1. Fetch Selected Stocks Matrix (Batch RPC)
+## 1. Transactions
 
-Queries the database for multiple tickers simultaneously using a JSON list passed directly in the request body. Returns all database columns, including the cached Chandelier Exit execution parameters.
+### GET /api/transactions
 
-* **Endpoint:** `/rpc/get_stocks_by_list`
-* **HTTP Method:** `POST`
+Returns all portfolio transactions ordered by most recent first.
 
-### Request Body Parameters
+**Response (`200`):**
+```json
+{
+  "transactions": [
+    {
+      "id": "uuid",
+      "ticker": "INFY.NS",
+      "name": "Infosys Limited",
+      "type": "BUY",
+      "date": "2026-06-15T17:03",
+      "timestamp": 1781800980,
+      "quantity": 10,
+      "price": 1580.5,
+      "currency": "INR",
+      "created_at": "2026-06-15T11:33:00+00:00"
+    }
+  ]
+}
+```
+
+---
+
+### POST /api/transactions
+
+Add a new BUY or SELL transaction.
+
+**Request Body:**
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `ticker_list` | Array [String] | **Yes** | A clean array of targeted stock strings to scan (e.g., `["AAPL", "TSLA"]`). |
+| `ticker` | String | Yes | Stock ticker symbol |
+| `name` | String | No | Company name (defaults to ticker) |
+| `type` | String | Yes | `BUY` or `SELL` |
+| `date` | String | Yes | ISO datetime (e.g. `2026-06-15T17:03`) |
+| `quantity` | Number | Yes | Number of shares (must be > 0) |
+| `price` | Number | Yes | Price per share (must be > 0) |
+| `currency` | String | No | Currency code (defaults to `INR`) |
 
-#### Example Request Body
-
+**Example:**
 ```json
 {
-  "ticker_list": ["AAPL", "NVDA", "RELIANCE.NS"]
+  "ticker": "AAPL",
+  "name": "Apple Inc.",
+  "type": "BUY",
+  "date": "2026-06-15T17:03",
+  "quantity": 12,
+  "price": 291.13,
+  "currency": "USD"
 }
-
 ```
 
-### Response Payload (`200 OK`)
+**Response (`201`):** Returns the created transaction object.
 
+**Validation:**
+- SELL transactions check you don't sell more than you own.
+- Returns `400` for missing fields, invalid type, or non-positive values.
+
+---
+
+### DELETE /api/transactions/:id
+
+Delete a transaction by its UUID.
+
+**Response (`200`):**
+```json
+{ "message": "Transaction deleted" }
+```
+
+**Error (`404`):**
+```json
+{ "error": "Transaction not found" }
+```
+
+---
+
+## 2. Stock Lookup & Search
+
+### GET /api/stock-lookup/:ticker
+
+Fetches live price and company name from Yahoo Finance. Tries the ticker as-is, then appends `.NS` and `.BO` for Indian stocks.
+
+**Response (`200`):**
+```json
+{
+  "ticker": "INFY.NS",
+  "name": "Infosys Limited",
+  "price": 1580.5,
+  "currency": "INR"
+}
+```
+
+---
+
+### GET /api/stock-search?q=query
+
+Autocomplete/search for stock tickers via Yahoo Finance.
+
+**Query Params:**
+
+| Param | Description |
+| --- | --- |
+| `q` | Search query (min 1 character) |
+
+**Response (`200`):**
+```json
+[
+  {
+    "symbol": "INFY.NS",
+    "name": "Infosys Limited",
+    "exchange": "NSI"
+  }
+]
+```
+
+---
+
+## 3. Exchange Rate
+
+### GET /api/exchange-rate/:currency
+
+Returns the exchange rate from the given currency to INR. Rates are cached for 10 minutes.
+
+**Response (`200`):**
+```json
+{ "currency": "USD", "rate": 95.1 }
+```
+
+---
+
+## 4. Chandelier Exit
+
+### POST /api/chandelier-exit
+
+Fetches pre-computed Chandelier Exit signals from the Supabase `stocks_list` table (populated by the `run-analysis-chandlierExit` edge function).
+
+**Request Body:**
+```json
+{ "tickers": ["INFY.NS", "AAPL", "NVDA"] }
+```
+
+**Response (`200`):**
 ```json
 [
   {
     "id": 1,
-    "ticker": "AAPL",
-    "created_at": "2026-06-14T19:53:00+00:00",
+    "ticker": "INFY.NS",
     "algo_chandelier_exit": {
       "asOf": "2026-06-12",
       "marketState": "BULLISH",
-      "updatedAt": "2026-06-14T21:00:00.021Z",
-      "currentSignal": "HOLD"
-    }
-  },
-  {
-    "id": 3,
-    "ticker": "NVDA",
-    "created_at": "2026-06-14T20:15:32+00:00",
-    "algo_chandelier_exit": {
-      "asOf": "2026-06-12",
-      "marketState": "BEARISH",
-      "updatedAt": "2026-06-14T21:00:00.045Z",
-      "currentSignal": "SELL"
+      "currentSignal": "BUY"
     }
   }
 ]
-
 ```
 
 ---
 
-## 2. Add New Tickers to Watchlist (Single or Bulk)
+## 5. Watchlist
 
-Adds brand new market identifiers to your tracking matrix. This endpoint utilizes native Postgres upsert tracking, meaning duplicate ticker conflicts are safely ignored without crashing your system.
+### POST /api/watchlist/add
 
-* **Endpoint:** `/stocks_list`
-* **HTTP Method:** `POST`
+Add a ticker to the Supabase `stocks_list` watchlist. Uses upsert — duplicates are safely ignored.
 
-### Additional Context Headers
-
-To ensure optimal performance and duplicate resolution, add this header to the request:
-
-```http
-Prefer: return=representation, resolution=merge-duplicates
-
+**Request Body:**
+```json
+{ "ticker": "AAPL" }
 ```
 
-### Request Body Options
-
-#### Option A: Single Ticker Injection (JSON Object)
-
+**Response (`201` new / `200` existing):**
 ```json
 {
-  "ticker": "INFY.NS"
+  "data": [{ "id": 12, "ticker": "AAPL", "algo_chandelier_exit": {} }],
+  "alreadyExisted": false
 }
-
-```
-
-#### Option B: Bulk Watchlist Ingestion (JSON Array)
-
-```json
-[
-  {"ticker": "AMD"},
-  {"ticker": "TCS.NS"},
-  {"ticker": "MSFT"}
-]
-
-```
-
-### Response Payload (`201 Created`)
-
-Returns an array showing the newly generated database IDs and empty slots waiting for the background engine (`run-analysis-chandlierExit`) to populate them.
-
-```json
-[
-  {
-    "id": 12,
-    "ticker": "AMD",
-    "created_at": "2026-06-14T21:18:44.891+00:00",
-    "algo_chandelier_exit": {}
-  },
-  {
-    "id": 13,
-    "ticker": "TCS.NS",
-    "created_at": "2026-06-14T21:18:44.891+00:00",
-    "algo_chandelier_exit": {}
-  }
-]
-
 ```
 
 ---
 
-## Standard Error Codes Reference
+## 6. Moving Average
 
-When designing your Salesforce Apex integration handlers, plan to catch these core system database responses:
+### GET /api/moving-average/:ticker?periods=20,44
 
-| HTTP Status | Supabase Internal Error Code | Trigger Condition | Solution |
-| --- | --- | --- | --- |
-| **`42501`** | `42501` | Row-Level Security (RLS) block. | Run the `DISABLE ROW LEVEL SECURITY` or assign policies via the SQL Editor. |
-| **`400 Bad Request`** | PGRST100 | Malformed JSON array nesting or invalid column reference. | Verify fields match table layout precisely. |
-| **`409 Conflict`** | `23505` | Unique constraint violation (`ticker` duplication). | Append the `resolution=merge-duplicates` preference to your transaction headers. |
+Calculates moving averages from the `stock_candles` table (trading days only).
+
+**Query Params:**
+
+| Param | Default | Description |
+| --- | --- | --- |
+| `periods` | `20,50` | Comma-separated list of MA periods to calculate |
+
+**Response (`200`):**
+```json
+{
+  "ticker": "INFY.NS",
+  "latestClose": 1580.5,
+  "latestDate": "2026-06-15",
+  "candlesAvailable": 100,
+  "movingAverages": {
+    "MA20": 1565.23,
+    "MA44": 1542.87
+  }
+}
+```
+
+**Notes:**
+- Returns `null` for a period if fewer candles exist than the period requires.
+- Candle data is populated by the `fetch-yfinance` Supabase edge function (fetches 100 trading days).
+
+---
+
+## 7. Stock Fundamentals
+
+### GET /api/stock-fundamentals/:ticker
+
+Returns 52-week high/low, PE ratio, and current price from the `stocks_list` table.
+
+**Response (`200`):**
+```json
+{
+  "ticker": "AAPL",
+  "fifty_two_week_high": 317.4,
+  "fifty_two_week_low": 195.07,
+  "pe_ratio": null,
+  "current_price": 291.13,
+  "fundamentals_updated_at": "2026-06-15T10:00:00Z"
+}
+```
+
+**Error (`404`):**
+```json
+{ "error": "Ticker AAPL not found in watchlist" }
+```
+
+---
+
+## Error Codes Reference
+
+| HTTP Status | Condition | Solution |
+| --- | --- | --- |
+| `400` | Missing/invalid fields | Check request body |
+| `404` | Ticker or transaction not found | Verify the resource exists |
+| `500` | Server or Supabase failure | Check server logs |
