@@ -553,10 +553,9 @@ async function renderHoldings(transactions) {
     const priceText = currentPrice != null ? formatCurrency(currentPrice, currentCur) : 'N/A';
     const ceInfo = chandelierData[h.ticker];
     const ceState = ceInfo ? ceInfo.marketState : null;
-    const ceSignal = ceInfo ? ceInfo.currentSignal : null;
-    const ceText = ceState ? (ceSignal === 'SELL' ? `SELL` : ceState) : 'N/A';
+    const ceText = ceState ? (ceState === 'BULLISH' ? 'BUY' : 'SELL') : 'N/A';
     const ceClass = ceState
-      ? (ceSignal === 'SELL' ? 'text-rose-500' : ceState === 'BEARISH' ? 'text-yellow-400' : 'text-emerald-400')
+      ? (ceState === 'BULLISH' ? 'text-emerald-400' : 'text-rose-500')
       : 'text-gray-400';
 
     // Fundamentals & Moving Averages
