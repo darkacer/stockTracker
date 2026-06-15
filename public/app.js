@@ -508,7 +508,7 @@ async function renderHoldings(transactions) {
     try {
       const [fund, ma] = await Promise.all([
         apiStockFundamentals(h.ticker),
-        apiMovingAverage(h.ticker, '20,50')
+        apiMovingAverage(h.ticker, '20,44')
       ]);
       if (fund) fundamentalsData[h.ticker] = fund;
       if (ma) maData[h.ticker] = ma.movingAverages || {};
