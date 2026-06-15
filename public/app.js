@@ -65,6 +65,18 @@ async function apiAddToWatchlist(ticker) {
   return res.json();
 }
 
+async function apiMovingAverage(ticker, periods = '20,50') {
+  const res = await fetch(`${API_BASE}/moving-average/${encodeURIComponent(ticker)}?periods=${periods}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+async function apiStockFundamentals(ticker) {
+  const res = await fetch(`${API_BASE}/stock-fundamentals/${encodeURIComponent(ticker)}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
 // --- Toast Notifications ---
 function showToast(message, type = 'success') {
   const container = document.getElementById('toast-container');
@@ -489,6 +501,20 @@ async function renderHoldings(transactions) {
     // Chandelier exit data unavailable — continue without it
   }
 
+  // Fetch fundamentals (52w high/low) and moving averages
+  const fundamentalsData = {};
+  const maData = {};
+  await Promise.all(activeHoldings.map(async (h) => {
+    try {
+      const [fund, ma] = await Promise.all([
+        apiStockFundamentals(h.ticker),
+        apiMovingAverage(h.ticker, '20,50')
+      ]);
+      if (fund) fundamentalsData[h.ticker] = fund;
+      if (ma) maData[h.ticker] = ma.movingAverages || {};
+    } catch {}
+  }));
+
   // Fetch exchange rates for all currencies involved
   const allCurrencies = [...new Set([
     ...Object.values(holdingsMap).map(h => h.currency),
@@ -533,6 +559,27 @@ async function renderHoldings(transactions) {
       ? (ceSignal === 'SELL' || ceState === 'BEARISH' ? 'text-rose-500' : 'text-emerald-400')
       : 'text-gray-400';
 
+    // Fundamentals & Moving Averages
+    const fund = fundamentalsData[h.ticker];
+    const ma = maData[h.ticker] || {};
+    const weekHigh = fund?.fifty_two_week_high;
+    const weekLow = fund?.fifty_two_week_low;
+    const ma20 = ma.MA20;
+    const ma50 = ma.MA50;
+
+    const weekHighText = weekHigh != null ? formatCurrency(weekHigh, currentCur) : 'N/A';
+    const weekLowText = weekLow != null ? formatCurrency(weekLow, currentCur) : 'N/A';
+    const ma20Text = ma20 != null ? formatCurrency(ma20, currentCur) : 'N/A';
+    const ma50Text = ma50 != null ? formatCurrency(ma50, currentCur) : 'N/A';
+
+    // Color MA relative to current price
+    const ma20Class = ma20 != null && currentPrice != null
+      ? (currentPrice >= ma20 ? 'text-emerald-400' : 'text-rose-500')
+      : 'text-gray-400';
+    const ma50Class = ma50 != null && currentPrice != null
+      ? (currentPrice >= ma50 ? 'text-emerald-400' : 'text-rose-500')
+      : 'text-gray-400';
+
     const html = `
       <tr class="hover:bg-gray-800/50">
         <td class="py-3 px-2 font-medium">${h.ticker}</td>
@@ -540,6 +587,10 @@ async function renderHoldings(transactions) {
         <td class="py-3 px-2 text-right">${h.totalShares.toFixed(3)}</td>
         <td class="py-3 px-2 text-right">${formatCurrency(avgPrice, cur)}</td>
         <td class="py-3 px-2 text-right">${priceText}</td>
+        <td class="py-3 px-2 text-right ${ma20Class}">${ma20Text}</td>
+        <td class="py-3 px-2 text-right ${ma50Class}">${ma50Text}</td>
+        <td class="py-3 px-2 text-right text-gray-300">${weekHighText}</td>
+        <td class="py-3 px-2 text-right text-gray-300">${weekLowText}</td>
         <td class="py-3 px-2 text-right ${ceClass} font-medium">${ceText}</td>
         <td class="py-3 px-2 text-right ${returnClass} font-medium">${returnText}</td>
         <td class="py-3 px-2 text-center space-x-1">
@@ -555,6 +606,10 @@ async function renderHoldings(transactions) {
       shares: h.totalShares,
       avgPrice,
       current: currentPrice,
+      ma20: ma20 || 0,
+      ma50: ma50 || 0,
+      weekHigh: weekHigh || 0,
+      weekLow: weekLow || 0,
       chandelier: ceSignal || '',
       return: returnPct,
       html

@@ -291,6 +291,77 @@ app.get('/api/exchange-rate/:currency', async (req, res) => {
   res.json({ currency, rate });
 });
 
+// GET /api/moving-average/:ticker - Calculate moving averages from stock_candles
+app.get('/api/moving-average/:ticker', async (req, res) => {
+  try {
+    const ticker = req.params.ticker.toUpperCase();
+    const periods = (req.query.periods || '20,50').split(',').map(Number);
+
+    // Fetch candle data ordered by date descending
+    const response = await supabaseFetch(
+      `stock_candles?ticker=eq.${encodeURIComponent(ticker)}&order=candle_date.desc&limit=100&select=candle_date,close`
+    );
+
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({ error: errText });
+    }
+
+    const candles = await response.json();
+
+    if (candles.length === 0) {
+      return res.status(404).json({ error: `No candle data found for ${ticker}` });
+    }
+
+    // Calculate moving averages for each requested period
+    const movingAverages = {};
+    for (const period of periods) {
+      if (candles.length >= period) {
+        const slice = candles.slice(0, period);
+        const sum = slice.reduce((acc, c) => acc + Number(c.close), 0);
+        movingAverages[`MA${period}`] = Math.round((sum / period) * 100) / 100;
+      } else {
+        movingAverages[`MA${period}`] = null;
+      }
+    }
+
+    // Also return the latest close price and date
+    res.json({
+      ticker,
+      latestClose: Number(candles[0].close),
+      latestDate: candles[0].candle_date,
+      candlesAvailable: candles.length,
+      movingAverages
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to calculate moving averages' });
+  }
+});
+
+// GET /api/stock-fundamentals/:ticker - Get fundamentals from stocks_list
+app.get('/api/stock-fundamentals/:ticker', async (req, res) => {
+  try {
+    const ticker = req.params.ticker.toUpperCase();
+    const response = await supabaseFetch(
+      `stocks_list?ticker=eq.${encodeURIComponent(ticker)}&select=ticker,fifty_two_week_high,fifty_two_week_low,pe_ratio,current_price,fundamentals_updated_at`
+    );
+
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({ error: errText });
+    }
+
+    const data = await response.json();
+    if (data.length === 0) {
+      return res.status(404).json({ error: `Ticker ${ticker} not found in watchlist` });
+    }
+
+    res.json(data[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch fundamentals' });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Stock Tracker running at http://localhost:${PORT}`);
 });
