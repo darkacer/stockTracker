@@ -582,7 +582,7 @@ async function renderHoldings(transactions) {
 
     const html = `
       <tr class="hover:bg-gray-800/50">
-        <td class="py-3 px-2 font-medium">${h.ticker}</td>
+        <td class="py-3 px-2 font-medium"><a href="https://in.tradingview.com/symbols/${h.ticker.replace(/\.(NS|BO|BSE)$/i, '')}" target="_blank" class="text-blue-400 hover:text-blue-300 hover:underline">${h.ticker}</a></td>
         <td class="py-3 px-2 text-gray-300">${h.name}</td>
         <td class="py-3 px-2 text-right">${h.totalShares.toFixed(3)}</td>
         <td class="py-3 px-2 text-right">${formatCurrency(avgPrice, cur)}</td>
