@@ -290,3 +290,5 @@ app.get('/api/exchange-rate/:currency', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Stock Tracker running at http://localhost:${PORT}`);
 });
+
+export default app;

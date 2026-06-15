@@ -1,149 +1,68 @@
 // Stock Tracker - Frontend Application Logic
 
-// --- Supabase Configuration ---
-const SUPABASE_URL = SUPABASE_CONFIG.url;
-const SUPABASE_ANON_KEY = SUPABASE_CONFIG.anonKey;
-const FUNCTIONS_BASE = `${SUPABASE_URL}/functions/v1`;
-
-// Detect mode: use local server.js if running locally, else Supabase
-const USE_LOCAL_SERVER = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const API_BASE = '/api';
 
-// Initialize Supabase client (loaded via CDN in index.html)
-let supabaseClient;
-function initSupabase() {
-  if (window.supabase && SUPABASE_ANON_KEY && SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY') {
-    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  }
-}
-
-// --- API helpers (dual-mode: local server or Supabase) ---
+// --- API helpers ---
 async function apiStockLookup(ticker) {
-  if (USE_LOCAL_SERVER) {
-    const res = await fetch(`${API_BASE}/stock-lookup/${encodeURIComponent(ticker)}`);
-    if (!res.ok) return null;
-    return res.json();
-  }
-  const res = await fetch(`${FUNCTIONS_BASE}/stock-lookup?ticker=${encodeURIComponent(ticker)}`);
+  const res = await fetch(`${API_BASE}/stock-lookup/${encodeURIComponent(ticker)}`);
   if (!res.ok) return null;
   return res.json();
 }
 
 async function apiStockSearch(query) {
-  if (USE_LOCAL_SERVER) {
-    const res = await fetch(`${API_BASE}/stock-search?q=${encodeURIComponent(query)}`);
-    if (!res.ok) return [];
-    return res.json();
-  }
-  const res = await fetch(`${FUNCTIONS_BASE}/stock-search?q=${encodeURIComponent(query)}`);
+  const res = await fetch(`${API_BASE}/stock-search?q=${encodeURIComponent(query)}`);
   if (!res.ok) return [];
   return res.json();
 }
 
 async function apiExchangeRate(currency) {
-  if (USE_LOCAL_SERVER) {
-    const res = await fetch(`${API_BASE}/exchange-rate/${currency}`);
-    if (!res.ok) return { currency, rate: 1 };
-    return res.json();
-  }
-  const res = await fetch(`${FUNCTIONS_BASE}/exchange-rate?currency=${encodeURIComponent(currency)}`);
+  const res = await fetch(`${API_BASE}/exchange-rate/${currency}`);
   if (!res.ok) return { currency, rate: 1 };
   return res.json();
 }
 
 async function apiGetTransactions() {
-  if (USE_LOCAL_SERVER) {
-    const res = await fetch(`${API_BASE}/transactions`);
-    const data = await res.json();
-    return data.transactions || [];
-  }
-  const { data, error } = await supabaseClient.from('transactions').select('*').order('date', { ascending: false });
-  if (error) throw error;
-  return data || [];
+  const res = await fetch(`${API_BASE}/transactions`);
+  const data = await res.json();
+  return data.transactions || [];
 }
 
 async function apiAddTransaction(payload) {
-  if (USE_LOCAL_SERVER) {
-    const res = await fetch(`${API_BASE}/transactions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || 'Failed to add transaction.');
-    }
-    return res.json();
+  const res = await fetch(`${API_BASE}/transactions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.error || 'Failed to add transaction.');
   }
-
-  const { ticker, name, type, date, quantity, price, currency } = payload;
-  if (type === 'SELL') {
-    const all = await apiGetTransactions();
-    const holdings = all
-      .filter(t => t.ticker === ticker.toUpperCase())
-      .reduce((acc, t) => acc + (t.type === 'BUY' ? Number(t.quantity) : -Number(t.quantity)), 0);
-    if (quantity > holdings) {
-      throw new Error(`Cannot sell ${quantity} shares. You only own ${holdings} shares of ${ticker.toUpperCase()}.`);
-    }
-  }
-
-  const { data, error } = await supabaseClient.from('transactions').insert({
-    ticker: ticker.toUpperCase(),
-    name: name || ticker.toUpperCase(),
-    type,
-    date,
-    timestamp: Math.floor(new Date(date).getTime() / 1000),
-    quantity: parseFloat(quantity),
-    price: parseFloat(price),
-    currency: currency || 'INR'
-  }).select();
-
-  if (error) throw error;
-  return data[0];
+  return res.json();
 }
 
 async function apiDeleteTransaction(id) {
-  if (USE_LOCAL_SERVER) {
-    const res = await fetch(`${API_BASE}/transactions/${id}`, { method: 'DELETE' });
-    if (!res.ok) throw new Error('Failed to delete');
-    return;
-  }
-  const { error } = await supabaseClient.from('transactions').delete().eq('id', id);
-  if (error) throw error;
+  const res = await fetch(`${API_BASE}/transactions/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete');
 }
 
 async function apiChandelierExit(tickers) {
-  if (USE_LOCAL_SERVER) {
-    const res = await fetch(`${API_BASE}/chandelier-exit`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tickers })
-    });
-    if (!res.ok) return [];
-    return res.json();
-  }
-  const { data, error } = await supabaseClient.rpc('get_stocks_by_list', { ticker_list: tickers });
-  if (error) return [];
-  return data || [];
+  const res = await fetch(`${API_BASE}/chandelier-exit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tickers })
+  });
+  if (!res.ok) return [];
+  return res.json();
 }
 
 async function apiAddToWatchlist(ticker) {
-  if (USE_LOCAL_SERVER) {
-    const res = await fetch(`${API_BASE}/watchlist/add`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ticker })
-    });
-    if (!res.ok) throw new Error('Failed to add to watchlist');
-    return res.json();
-  }
-  const { data, error } = await supabaseClient.from('stocks_list').upsert(
-    { ticker },
-    { onConflict: 'ticker' }
-  ).select();
-  if (error) throw error;
-  const alreadyExisted = data && data.length > 0 && data[0].algo_chandelier_exit && Object.keys(data[0].algo_chandelier_exit).length > 0;
-  return { data, alreadyExisted };
+  const res = await fetch(`${API_BASE}/watchlist/add`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ticker })
+  });
+  if (!res.ok) throw new Error('Failed to add to watchlist');
+  return res.json();
 }
 
 // --- Toast Notifications ---
@@ -833,5 +752,4 @@ function exportTransactionsCSV() {
 }
 
 // --- Initialize ---
-initSupabase();
 loadDashboard();
