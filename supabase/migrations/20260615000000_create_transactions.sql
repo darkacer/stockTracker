@@ -4,7 +4,7 @@ create table if not exists public.transactions (
   ticker text not null,
   name text,
   type text not null check (type in ('BUY', 'SELL')),
-  date date not null,
+  date text not null,
   timestamp bigint,
   quantity numeric not null check (quantity > 0),
   price numeric not null check (price > 0),

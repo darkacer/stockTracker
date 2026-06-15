@@ -1,38 +1,53 @@
 import 'dotenv/config';
 import express from 'express';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { v4 as uuidv4 } from 'uuid';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3500;
-const DATA_FILE = path.join(__dirname, 'portfolio.json');
 
 // Middleware
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Ensure portfolio.json exists
-if (!fs.existsSync(DATA_FILE)) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify({ transactions: [] }, null, 2));
+// Supabase helper
+function supabaseFetch(path, options = {}) {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseKey) throw new Error('Supabase configuration missing');
+
+  return fetch(`${supabaseUrl}/rest/v1/${path}`, {
+    ...options,
+    headers: {
+      'apikey': supabaseKey,
+      'Authorization': `Bearer ${supabaseKey}`,
+      'Content-Type': 'application/json',
+      'Prefer': options.prefer || '',
+      ...options.headers
+    }
+  });
 }
 
 // GET /api/transactions - Read all transactions
-app.get('/api/transactions', (req, res) => {
+app.get('/api/transactions', async (req, res) => {
   try {
-    const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
-    res.json(data);
+    const response = await supabaseFetch('transactions?order=created_at.desc');
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({ error: errText });
+    }
+    const transactions = await response.json();
+    res.json({ transactions });
   } catch (err) {
     res.status(500).json({ error: 'Failed to read transactions' });
   }
 });
 
 // POST /api/transactions - Add a new transaction
-app.post('/api/transactions', (req, res) => {
+app.post('/api/transactions', async (req, res) => {
   try {
     const { ticker, name, type, date, quantity, price, currency } = req.body;
 
@@ -49,20 +64,19 @@ app.post('/api/transactions', (req, res) => {
       return res.status(400).json({ error: 'Quantity and price must be positive' });
     }
 
-    const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
-
     // For SELL transactions, validate user isn't selling more than they own
     if (type === 'SELL') {
-      const holdings = data.transactions
-        .filter(t => t.ticker === ticker.toUpperCase())
-        .reduce((acc, t) => acc + (t.type === 'BUY' ? t.quantity : -t.quantity), 0);
-      if (quantity > holdings) {
-        return res.status(400).json({ error: `Cannot sell ${quantity} shares. You only own ${holdings} shares of ${ticker.toUpperCase()}.` });
+      const holdingsRes = await supabaseFetch(`transactions?ticker=eq.${encodeURIComponent(ticker.toUpperCase())}&select=type,quantity`);
+      if (holdingsRes.ok) {
+        const txns = await holdingsRes.json();
+        const held = txns.reduce((acc, t) => acc + (t.type === 'BUY' ? Number(t.quantity) : -Number(t.quantity)), 0);
+        if (parseFloat(quantity) > held) {
+          return res.status(400).json({ error: `Cannot sell ${quantity} shares. You only own ${held} shares of ${ticker.toUpperCase()}.` });
+        }
       }
     }
 
     const transaction = {
-      id: uuidv4(),
       ticker: ticker.toUpperCase(),
       name: name || ticker.toUpperCase(),
       type,
@@ -73,28 +87,42 @@ app.post('/api/transactions', (req, res) => {
       currency: currency || 'INR'
     };
 
-    data.transactions.push(transaction);
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+    const response = await supabaseFetch('transactions', {
+      method: 'POST',
+      prefer: 'return=representation',
+      body: JSON.stringify(transaction)
+    });
 
-    res.status(201).json(transaction);
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({ error: errText });
+    }
+
+    const [created] = await response.json();
+    res.status(201).json(created);
   } catch (err) {
     res.status(500).json({ error: 'Failed to save transaction' });
   }
 });
 
 // DELETE /api/transactions/:id - Remove a transaction by ID
-app.delete('/api/transactions/:id', (req, res) => {
+app.delete('/api/transactions/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
+    const response = await supabaseFetch(`transactions?id=eq.${id}`, {
+      method: 'DELETE',
+      prefer: 'return=representation'
+    });
 
-    const index = data.transactions.findIndex(t => t.id === id);
-    if (index === -1) {
-      return res.status(404).json({ error: 'Transaction not found' });
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({ error: errText });
     }
 
-    data.transactions.splice(index, 1);
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
+    const deleted = await response.json();
+    if (deleted.length === 0) {
+      return res.status(404).json({ error: 'Transaction not found' });
+    }
 
     res.json({ message: 'Transaction deleted' });
   } catch (err) {
@@ -202,22 +230,10 @@ app.post('/api/watchlist/add', async (req, res) => {
     return res.status(400).json({ error: 'ticker is required' });
   }
 
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseKey) {
-    return res.status(500).json({ error: 'Supabase configuration missing' });
-  }
-
   try {
-    const response = await fetch(`${supabaseUrl}/rest/v1/stocks_list`, {
+    const response = await supabaseFetch('stocks_list', {
       method: 'POST',
-      headers: {
-        'apikey': supabaseKey,
-        'Authorization': `Bearer ${supabaseKey}`,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=representation, resolution=merge-duplicates'
-      },
+      prefer: 'return=representation, resolution=merge-duplicates',
       body: JSON.stringify({ ticker })
     });
 
@@ -243,21 +259,9 @@ app.post('/api/chandelier-exit', async (req, res) => {
     return res.status(400).json({ error: 'tickers array is required' });
   }
 
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseKey) {
-    return res.status(500).json({ error: 'Supabase configuration missing' });
-  }
-
   try {
-    const response = await fetch(`${supabaseUrl}/rest/v1/rpc/get_stocks_by_list`, {
+    const response = await supabaseFetch('rpc/get_stocks_by_list', {
       method: 'POST',
-      headers: {
-        'apikey': supabaseKey,
-        'Authorization': `Bearer ${supabaseKey}`,
-        'Content-Type': 'application/json'
-      },
       body: JSON.stringify({ ticker_list: tickers })
     });
 
