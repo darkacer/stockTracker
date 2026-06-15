@@ -65,7 +65,7 @@ async function apiAddToWatchlist(ticker) {
   return res.json();
 }
 
-async function apiMovingAverage(ticker, periods = '20,50') {
+async function apiMovingAverage(ticker, periods = '20,44') {
   const res = await fetch(`${API_BASE}/moving-average/${encodeURIComponent(ticker)}?periods=${periods}`);
   if (!res.ok) return null;
   return res.json();
@@ -564,19 +564,19 @@ async function renderHoldings(transactions) {
     const weekHigh = fund?.fifty_two_week_high;
     const weekLow = fund?.fifty_two_week_low;
     const ma20 = ma.MA20;
-    const ma50 = ma.MA50;
+    const ma44 = ma.MA44;
 
     const weekHighText = weekHigh != null ? formatCurrency(weekHigh, currentCur) : 'N/A';
     const weekLowText = weekLow != null ? formatCurrency(weekLow, currentCur) : 'N/A';
     const ma20Text = ma20 != null ? formatCurrency(ma20, currentCur) : 'N/A';
-    const ma50Text = ma50 != null ? formatCurrency(ma50, currentCur) : 'N/A';
+    const ma44Text = ma44 != null ? formatCurrency(ma44, currentCur) : 'N/A';
 
     // Color MA relative to current price
     const ma20Class = ma20 != null && currentPrice != null
       ? (currentPrice >= ma20 ? 'text-emerald-400' : 'text-rose-500')
       : 'text-gray-400';
-    const ma50Class = ma50 != null && currentPrice != null
-      ? (currentPrice >= ma50 ? 'text-emerald-400' : 'text-rose-500')
+    const ma44Class = ma44 != null && currentPrice != null
+      ? (currentPrice >= ma44 ? 'text-emerald-400' : 'text-rose-500')
       : 'text-gray-400';
 
     // % below 52W High
@@ -595,7 +595,7 @@ async function renderHoldings(transactions) {
         <td class="py-3 px-2 text-right">${formatCurrency(avgPrice, cur)}</td>
         <td class="py-3 px-2 text-right">${priceText}</td>
         <td class="py-3 px-2 text-right ${ma20Class}">${ma20Text}</td>
-        <td class="py-3 px-2 text-right ${ma50Class}">${ma50Text}</td>
+        <td class="py-3 px-2 text-right ${ma44Class}">${ma44Text}</td>
         <td class="py-3 px-2 text-right text-gray-300">${weekHighText}</td>
         <td class="py-3 px-2 text-right text-gray-300">${weekLowText}</td>
         <td class="py-3 px-2 text-right ${belowHighClass} font-medium">${belowHighText}</td>
@@ -615,7 +615,7 @@ async function renderHoldings(transactions) {
       avgPrice,
       current: currentPrice,
       ma20: ma20 || 0,
-      ma50: ma50 || 0,
+      ma44: ma44 || 0,
       weekHigh: weekHigh || 0,
       weekLow: weekLow || 0,
       belowHigh: belowHigh || 0,
