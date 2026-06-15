@@ -602,8 +602,8 @@ async function renderHoldings(transactions) {
         <td class="py-3 px-2 text-right ${ceClass} font-medium">${ceText}</td>
         <td class="py-3 px-2 text-right ${returnClass} font-medium">${returnText}</td>
         <td class="py-3 px-2 text-center space-x-1">
-          <button onclick="prefillTransaction('${h.ticker}', '${h.name.replace(/'/g, "\\'") }', 'BUY', ${currentPrice || 0}, '${currentCur}')" class="text-xs bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 px-2 py-1 rounded transition-colors">Buy</button>
-          <button onclick="prefillTransaction('${h.ticker}', '${h.name.replace(/'/g, "\\'") }', 'SELL', ${currentPrice || 0}, '${currentCur}')" class="text-xs bg-rose-600/20 hover:bg-rose-600/40 text-rose-400 px-2 py-1 rounded transition-colors">Sell</button>
+          <button onclick="prefillTransaction('${h.ticker}', '${h.name.replace(/'/g, "\\'") }', 'BUY', ${currentPrice || 0}, '${currentCur}')" class="text-[10px] bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 px-1.5 py-0.5 rounded transition-colors font-bold">B</button>
+          <button onclick="prefillTransaction('${h.ticker}', '${h.name.replace(/'/g, "\\'") }', 'SELL', ${currentPrice || 0}, '${currentCur}')" class="text-[10px] bg-rose-600/20 hover:bg-rose-600/40 text-rose-400 px-1.5 py-0.5 rounded transition-colors font-bold">S</button>
         </td>
       </tr>
     `;
