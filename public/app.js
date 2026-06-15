@@ -1,0 +1,837 @@
+// Stock Tracker - Frontend Application Logic
+
+// --- Supabase Configuration ---
+const SUPABASE_URL = SUPABASE_CONFIG.url;
+const SUPABASE_ANON_KEY = SUPABASE_CONFIG.anonKey;
+const FUNCTIONS_BASE = `${SUPABASE_URL}/functions/v1`;
+
+// Detect mode: use local server.js if running locally, else Supabase
+const USE_LOCAL_SERVER = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const API_BASE = '/api';
+
+// Initialize Supabase client (loaded via CDN in index.html)
+let supabaseClient;
+function initSupabase() {
+  if (window.supabase && SUPABASE_ANON_KEY && SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY') {
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  }
+}
+
+// --- API helpers (dual-mode: local server or Supabase) ---
+async function apiStockLookup(ticker) {
+  if (USE_LOCAL_SERVER) {
+    const res = await fetch(`${API_BASE}/stock-lookup/${encodeURIComponent(ticker)}`);
+    if (!res.ok) return null;
+    return res.json();
+  }
+  const res = await fetch(`${FUNCTIONS_BASE}/stock-lookup?ticker=${encodeURIComponent(ticker)}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+async function apiStockSearch(query) {
+  if (USE_LOCAL_SERVER) {
+    const res = await fetch(`${API_BASE}/stock-search?q=${encodeURIComponent(query)}`);
+    if (!res.ok) return [];
+    return res.json();
+  }
+  const res = await fetch(`${FUNCTIONS_BASE}/stock-search?q=${encodeURIComponent(query)}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+async function apiExchangeRate(currency) {
+  if (USE_LOCAL_SERVER) {
+    const res = await fetch(`${API_BASE}/exchange-rate/${currency}`);
+    if (!res.ok) return { currency, rate: 1 };
+    return res.json();
+  }
+  const res = await fetch(`${FUNCTIONS_BASE}/exchange-rate?currency=${encodeURIComponent(currency)}`);
+  if (!res.ok) return { currency, rate: 1 };
+  return res.json();
+}
+
+async function apiGetTransactions() {
+  if (USE_LOCAL_SERVER) {
+    const res = await fetch(`${API_BASE}/transactions`);
+    const data = await res.json();
+    return data.transactions || [];
+  }
+  const { data, error } = await supabaseClient.from('transactions').select('*').order('date', { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+async function apiAddTransaction(payload) {
+  if (USE_LOCAL_SERVER) {
+    const res = await fetch(`${API_BASE}/transactions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || 'Failed to add transaction.');
+    }
+    return res.json();
+  }
+
+  const { ticker, name, type, date, quantity, price, currency } = payload;
+  if (type === 'SELL') {
+    const all = await apiGetTransactions();
+    const holdings = all
+      .filter(t => t.ticker === ticker.toUpperCase())
+      .reduce((acc, t) => acc + (t.type === 'BUY' ? Number(t.quantity) : -Number(t.quantity)), 0);
+    if (quantity > holdings) {
+      throw new Error(`Cannot sell ${quantity} shares. You only own ${holdings} shares of ${ticker.toUpperCase()}.`);
+    }
+  }
+
+  const { data, error } = await supabaseClient.from('transactions').insert({
+    ticker: ticker.toUpperCase(),
+    name: name || ticker.toUpperCase(),
+    type,
+    date,
+    timestamp: Math.floor(new Date(date).getTime() / 1000),
+    quantity: parseFloat(quantity),
+    price: parseFloat(price),
+    currency: currency || 'INR'
+  }).select();
+
+  if (error) throw error;
+  return data[0];
+}
+
+async function apiDeleteTransaction(id) {
+  if (USE_LOCAL_SERVER) {
+    const res = await fetch(`${API_BASE}/transactions/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete');
+    return;
+  }
+  const { error } = await supabaseClient.from('transactions').delete().eq('id', id);
+  if (error) throw error;
+}
+
+async function apiChandelierExit(tickers) {
+  if (USE_LOCAL_SERVER) {
+    const res = await fetch(`${API_BASE}/chandelier-exit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tickers })
+    });
+    if (!res.ok) return [];
+    return res.json();
+  }
+  const { data, error } = await supabaseClient.rpc('get_stocks_by_list', { ticker_list: tickers });
+  if (error) return [];
+  return data || [];
+}
+
+async function apiAddToWatchlist(ticker) {
+  if (USE_LOCAL_SERVER) {
+    const res = await fetch(`${API_BASE}/watchlist/add`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticker })
+    });
+    if (!res.ok) throw new Error('Failed to add to watchlist');
+    return res.json();
+  }
+  const { data, error } = await supabaseClient.from('stocks_list').upsert(
+    { ticker },
+    { onConflict: 'ticker' }
+  ).select();
+  if (error) throw error;
+  const alreadyExisted = data && data.length > 0 && data[0].algo_chandelier_exit && Object.keys(data[0].algo_chandelier_exit).length > 0;
+  return { data, alreadyExisted };
+}
+
+// --- Toast Notifications ---
+function showToast(message, type = 'success') {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  const bgClass = type === 'success' ? 'bg-emerald-600' : type === 'error' ? 'bg-rose-600' : 'bg-yellow-600';
+  toast.className = `${bgClass} text-white px-5 py-3 rounded-lg shadow-lg text-sm font-medium transform transition-all duration-300 translate-x-0 opacity-100`;
+  toast.textContent = message;
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.classList.add('opacity-0', 'translate-x-4');
+    setTimeout(() => toast.remove(), 300);
+  }, 3500);
+}
+
+// --- Transaction Panel Toggle ---
+function toggleTransactionPanel() {
+  const panel = document.getElementById('transaction-panel');
+  const overlay = document.getElementById('panel-overlay');
+  const isOpen = !panel.classList.contains('-translate-x-full');
+  if (isOpen) {
+    panel.classList.add('-translate-x-full');
+    overlay.classList.add('hidden');
+  } else {
+    panel.classList.remove('-translate-x-full');
+    overlay.classList.remove('hidden');
+  }
+}
+
+// Format number in Indian numbering system (xx,xx,xxx.xx)
+function formatINR(num) {
+  const isNegative = num < 0;
+  const abs = Math.abs(num);
+  const [intPart, decPart] = abs.toFixed(2).split('.');
+
+  // Indian grouping: last 3 digits, then groups of 2
+  let formatted = '';
+  if (intPart.length <= 3) {
+    formatted = intPart;
+  } else {
+    formatted = intPart.slice(-3);
+    let remaining = intPart.slice(0, -3);
+    while (remaining.length > 2) {
+      formatted = remaining.slice(-2) + ',' + formatted;
+      remaining = remaining.slice(0, -2);
+    }
+    if (remaining.length > 0) {
+      formatted = remaining + ',' + formatted;
+    }
+  }
+
+  return `${isNegative ? '-' : ''}₹${formatted}.${decPart}`;
+}
+
+// Format with original currency symbol
+const currencySymbols = { INR: '₹', USD: '$', EUR: '€', GBP: '£', JPY: '¥' };
+
+function formatCurrency(num, currency) {
+  const symbol = currencySymbols[currency] || currency + ' ';
+  const abs = Math.abs(num);
+  const formatted = abs.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${num < 0 ? '-' : ''}${symbol}${formatted}`;
+}
+
+// DOM Elements
+const form = document.getElementById('transaction-form');
+const tickerInput = document.getElementById('input-ticker');
+const nameInput = document.getElementById('input-name');
+const typeInput = document.getElementById('input-type');
+const dateInput = document.getElementById('input-date');
+const quantityInput = document.getElementById('input-quantity');
+const priceInput = document.getElementById('input-price');
+const lookupStatus = document.getElementById('lookup-status');
+const formError = document.getElementById('form-error');
+
+const totalInvestedEl = document.getElementById('total-invested');
+const currentValueEl = document.getElementById('current-value');
+const realizedPnlEl = document.getElementById('realized-pnl');
+const unrealizedPnlEl = document.getElementById('unrealized-pnl');
+const totalPnlPctEl = document.getElementById('total-pnl-pct');
+
+const holdingsBody = document.getElementById('holdings-body');
+const holdingsEmpty = document.getElementById('holdings-empty');
+const transactionsBody = document.getElementById('transactions-body');
+const transactionsEmpty = document.getElementById('transactions-empty');
+
+// Set default date to now
+function getLocalDatetime() {
+  const now = new Date();
+  return now.getFullYear() + '-' +
+    String(now.getMonth() + 1).padStart(2, '0') + '-' +
+    String(now.getDate()).padStart(2, '0') + 'T' +
+    String(now.getHours()).padStart(2, '0') + ':' +
+    String(now.getMinutes()).padStart(2, '0');
+}
+dateInput.value = getLocalDatetime();
+
+// --- Ticker Dropdown/Autocomplete ---
+const tickerDropdown = document.getElementById('ticker-dropdown');
+let searchTimeout = null;
+
+tickerInput.addEventListener('input', () => {
+  clearTimeout(lookupTimeout);
+  clearTimeout(searchTimeout);
+  const query = tickerInput.value.trim();
+
+  if (query.length < 1) {
+    tickerDropdown.classList.add('hidden');
+    return;
+  }
+
+  searchTimeout = setTimeout(() => searchTickers(query), 300);
+});
+
+tickerInput.addEventListener('blur', () => {
+  // Delay hiding so click on dropdown item registers
+  setTimeout(() => {
+    tickerDropdown.classList.add('hidden');
+    const ticker = tickerInput.value.trim();
+    if (ticker.length > 0) {
+      lookupTicker(ticker);
+    }
+  }, 200);
+});
+
+tickerInput.addEventListener('focus', () => {
+  const query = tickerInput.value.trim();
+  if (query.length >= 1) {
+    searchTickers(query);
+  }
+});
+
+async function searchTickers(query) {
+  try {
+    const results = await apiStockSearch(query);
+
+    if (results.length === 0) {
+      tickerDropdown.classList.add('hidden');
+      return;
+    }
+
+    tickerDropdown.innerHTML = results.map(r => `
+      <li class="px-4 py-2.5 cursor-pointer hover:bg-emerald-600/20 flex justify-between items-center transition-colors"
+          data-symbol="${r.symbol}" data-name="${r.name}">
+        <span>
+          <span class="font-semibold text-white">${r.symbol}</span>
+          <span class="text-gray-400 text-sm ml-2">${r.name}</span>
+        </span>
+        <span class="text-xs text-gray-500">${r.exchange}</span>
+      </li>
+    `).join('');
+
+    tickerDropdown.classList.remove('hidden');
+
+    // Attach click handlers
+    tickerDropdown.querySelectorAll('li').forEach(item => {
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        const symbol = item.dataset.symbol;
+        const name = item.dataset.name;
+        tickerInput.value = symbol;
+        nameInput.value = name;
+        tickerDropdown.classList.add('hidden');
+        lookupTicker(symbol);
+      });
+    });
+  } catch {
+    tickerDropdown.classList.add('hidden');
+  }
+}
+
+// --- Stock Lookup ---
+let lookupTimeout = null;
+let currentLookupCurrency = 'INR';
+
+async function lookupTicker(ticker) {
+  lookupStatus.textContent = 'Looking up ticker...';
+  lookupStatus.classList.remove('hidden');
+  lookupStatus.classList.add('lookup-loading');
+
+  try {
+    const data = await apiStockLookup(ticker);
+    if (data) {
+      nameInput.value = data.name;
+      priceInput.value = data.price.toFixed(2);
+      currentLookupCurrency = data.currency || 'INR';
+      lookupStatus.textContent = `✓ Found: ${data.name} (${data.currency} ${data.price.toFixed(2)})`;
+      lookupStatus.classList.remove('lookup-loading');
+      lookupStatus.classList.add('text-emerald-400');
+      setTimeout(() => {
+        lookupStatus.classList.add('hidden');
+        lookupStatus.classList.remove('text-emerald-400');
+      }, 3000);
+    } else {
+      lookupStatus.textContent = 'Ticker not found — enter name manually';
+      lookupStatus.classList.remove('lookup-loading');
+      lookupStatus.classList.add('text-yellow-400');
+      setTimeout(() => {
+        lookupStatus.classList.add('hidden');
+        lookupStatus.classList.remove('text-yellow-400');
+      }, 3000);
+    }
+  } catch {
+    lookupStatus.textContent = 'Lookup failed — enter details manually';
+    lookupStatus.classList.remove('lookup-loading');
+    lookupStatus.classList.add('text-yellow-400');
+    setTimeout(() => {
+      lookupStatus.classList.add('hidden');
+      lookupStatus.classList.remove('text-yellow-400');
+    }, 3000);
+  }
+}
+
+// --- Form Submission ---
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  formError.classList.add('hidden');
+
+  const payload = {
+    ticker: tickerInput.value.trim(),
+    name: nameInput.value.trim(),
+    type: typeInput.value,
+    date: dateInput.value,
+    quantity: parseFloat(quantityInput.value),
+    price: parseFloat(priceInput.value),
+    currency: currentLookupCurrency
+  };
+
+  if (!payload.ticker || !payload.date || !payload.quantity || !payload.price) {
+    showError('Please fill in all required fields.');
+    return;
+  }
+
+  try {
+    await apiAddTransaction(payload);
+    form.reset();
+    dateInput.value = new Date().toISOString().split('T')[0];
+    currentLookupCurrency = 'INR';
+    await loadDashboard();
+
+    // Add ticker to Supabase watchlist
+    addToWatchlist(payload.ticker);
+  } catch (err) {
+    showError(err.message || 'Failed to add transaction.');
+  }
+});
+
+function showError(msg) {
+  formError.textContent = msg;
+  formError.classList.remove('hidden');
+}
+
+// --- Add to Supabase Watchlist ---
+async function addToWatchlist(ticker) {
+  try {
+    const result = await apiAddToWatchlist(ticker);
+    if (result.alreadyExisted) {
+      showToast(`${ticker} already exists in watchlist`, 'info');
+    } else {
+      showToast(`${ticker} added to watchlist successfully`, 'success');
+    }
+  } catch {
+    showToast(`Failed to add ${ticker} to watchlist`, 'error');
+  }
+}
+
+// --- Prefill Transaction Form ---
+function prefillTransaction(ticker, name, type, price, currency) {
+  tickerInput.value = ticker;
+  nameInput.value = name;
+  typeInput.value = type;
+  priceInput.value = price > 0 ? price.toFixed(2) : '';
+  currentLookupCurrency = currency || 'INR';
+  dateInput.value = getLocalDatetime();
+  quantityInput.value = '';
+  // Open the panel and focus quantity
+  const panel = document.getElementById('transaction-panel');
+  if (panel.classList.contains('-translate-x-full')) {
+    toggleTransactionPanel();
+  }
+  setTimeout(() => quantityInput.focus(), 300);
+}
+
+// --- Delete Transaction ---
+async function deleteTransaction(id) {
+  try {
+    await apiDeleteTransaction(id);
+    await loadDashboard();
+  } catch {
+    // silently fail
+  }
+}
+
+// --- Dashboard Data Loading ---
+async function loadDashboard() {
+  try {
+    const transactions = await apiGetTransactions();
+    console.log('[loadDashboard] transactions:', transactions.length);
+    renderTransactionLog(transactions);
+    await renderHoldings(transactions);
+  } catch (err) {
+    console.error('[loadDashboard] Error:', err);
+  }
+}
+
+function renderTransactionLog(transactions) {
+  if (transactions.length === 0) {
+    transactionsBody.innerHTML = '';
+    transactionsEmpty.classList.remove('hidden');
+    cachedTransactions = [];
+    return;
+  }
+
+  transactionsEmpty.classList.add('hidden');
+
+  cachedTransactions = transactions.map(t => {
+    const typeClass = t.type === 'BUY' ? 'text-emerald-400' : 'text-rose-500';
+    const cur = t.currency || 'INR';
+    const total = t.quantity * t.price;
+    const displayDate = t.date && t.date.includes('T')
+      ? t.date.replace('T', ' ').slice(0, 16)
+      : t.date;
+    const html = `
+      <tr class="hover:bg-gray-800/50">
+        <td class="py-3 px-2 whitespace-nowrap">${displayDate}</td>
+        <td class="py-3 px-2 font-medium">${t.ticker}</td>
+        <td class="py-3 px-2 ${typeClass} font-semibold">${t.type}</td>
+        <td class="py-3 px-2 text-right">${t.quantity}</td>
+        <td class="py-3 px-2 text-right">${formatCurrency(t.price, cur)}</td>
+        <td class="py-3 px-2 text-right">${formatCurrency(total, cur)}</td>
+        <td class="py-3 px-2 text-center">
+          <button onclick="deleteTransaction('${t.id}')"
+            class="text-gray-500 hover:text-rose-500 transition-colors" title="Delete">
+            ✕
+          </button>
+        </td>
+      </tr>
+    `;
+    return { date: t.date, ticker: t.ticker, type: t.type, quantity: t.quantity, price: t.price, total, html };
+  });
+
+  // Apply current sort
+  rerenderTransactions();
+  updateSortIndicators('t', transactionsSortCol);
+}
+
+async function renderHoldings(transactions) {
+  // Aggregate by ticker
+  const holdingsMap = {};
+
+  for (const t of transactions) {
+    if (!holdingsMap[t.ticker]) {
+      holdingsMap[t.ticker] = { ticker: t.ticker, name: t.name, currency: t.currency || 'INR', totalShares: 0, totalCost: 0, realizedPnl: 0 };
+    }
+
+    const h = holdingsMap[t.ticker];
+    if (t.type === 'BUY') {
+      h.totalCost += t.quantity * t.price;
+      h.totalShares += t.quantity;
+    } else {
+      // SELL: calculate realized P&L using average cost
+      const avgCost = h.totalShares > 0 ? h.totalCost / h.totalShares : 0;
+      h.realizedPnl += (t.price - avgCost) * t.quantity;
+      h.totalCost -= avgCost * t.quantity;
+      h.totalShares -= t.quantity;
+    }
+  }
+
+  // Filter to tickers with positive holdings
+  const activeHoldings = Object.values(holdingsMap).filter(h => h.totalShares > 0.0001);
+
+  if (activeHoldings.length === 0) {
+    holdingsBody.innerHTML = '';
+    holdingsEmpty.classList.remove('hidden');
+
+    // Still calculate realized P&L from all tickers (convert to INR)
+    const allHoldings = Object.values(holdingsMap);
+    const currencies = [...new Set(allHoldings.map(h => h.currency))];
+    const rates = await fetchExchangeRates(currencies);
+    const totalRealizedPnl = allHoldings.reduce((sum, h) => sum + h.realizedPnl * (rates[h.currency] || 1), 0);
+
+    totalInvestedEl.textContent = formatINR(0);
+    currentValueEl.textContent = formatINR(0);
+    renderPnl(unrealizedPnlEl, 0);
+    renderPnl(realizedPnlEl, totalRealizedPnl);
+    renderPnlPct(totalPnlPctEl, 0);
+    return;
+  }
+
+  holdingsEmpty.classList.add('hidden');
+
+  // Fetch current prices for all held tickers
+  const prices = {};
+  const priceCurrencies = {};
+  await Promise.all(activeHoldings.map(async (h) => {
+    try {
+      const data = await apiStockLookup(h.ticker);
+      if (data) {
+        prices[h.ticker] = data.price;
+        priceCurrencies[h.ticker] = data.currency;
+      } else {
+        prices[h.ticker] = null;
+      }
+    } catch {
+      prices[h.ticker] = null;
+    }
+  }));
+
+  // Fetch chandelier exit data from Supabase
+  const chandelierData = {};
+  try {
+    const tickersForApi = activeHoldings.map(h => h.ticker);
+    const ceData = await apiChandelierExit(tickersForApi);
+    if (Array.isArray(ceData)) {
+      ceData.forEach(item => {
+        if (item.ticker && item.algo_chandelier_exit) {
+          chandelierData[item.ticker] = item.algo_chandelier_exit;
+        }
+      });
+    }
+  } catch {
+    // Chandelier exit data unavailable — continue without it
+  }
+
+  // Fetch exchange rates for all currencies involved
+  const allCurrencies = [...new Set([
+    ...Object.values(holdingsMap).map(h => h.currency),
+    ...Object.values(priceCurrencies)
+  ])];
+  const rates = await fetchExchangeRates(allCurrencies);
+
+  let totalInvestedINR = 0;
+  let totalCurrentValueINR = 0;
+  const totalRealizedPnlINR = Object.values(holdingsMap).reduce(
+    (sum, h) => sum + h.realizedPnl * (rates[h.currency] || 1), 0
+  );
+
+  cachedHoldingsRows = activeHoldings.map(h => {
+    const cur = h.currency;
+    const rate = rates[cur] || 1;
+    const avgPrice = h.totalCost / h.totalShares;
+    const currentPrice = prices[h.ticker];
+    const currentCur = priceCurrencies[h.ticker] || cur;
+    const currentVal = currentPrice != null ? currentPrice * h.totalShares : null;
+    const returnOriginal = currentVal != null ? currentVal - h.totalCost : null;
+    const returnPct = returnOriginal != null ? (returnOriginal / h.totalCost) * 100 : null;
+
+    // Convert to INR for summary
+    totalInvestedINR += h.totalCost * rate;
+    if (currentVal != null) totalCurrentValueINR += currentVal * (rates[currentCur] || 1);
+
+    const returnClass = returnOriginal != null
+      ? (returnOriginal >= 0 ? 'text-emerald-400' : 'text-rose-500')
+      : 'text-gray-400';
+
+    const returnText = returnOriginal != null
+      ? `${returnOriginal >= 0 ? '+' : ''}${formatCurrency(returnOriginal, cur)} (${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(1)}%)`
+      : 'N/A';
+
+    const priceText = currentPrice != null ? formatCurrency(currentPrice, currentCur) : 'N/A';
+    const ceInfo = chandelierData[h.ticker];
+    const ceSignal = ceInfo ? ceInfo.currentSignal : null;
+    const ceState = ceInfo ? ceInfo.marketState : null;
+    const ceText = ceSignal ? `${ceSignal} (${ceState})` : 'N/A';
+    const ceClass = ceSignal
+      ? (ceSignal === 'SELL' || ceState === 'BEARISH' ? 'text-rose-500' : 'text-emerald-400')
+      : 'text-gray-400';
+
+    const html = `
+      <tr class="hover:bg-gray-800/50">
+        <td class="py-3 px-2 font-medium">${h.ticker}</td>
+        <td class="py-3 px-2 text-gray-300">${h.name}</td>
+        <td class="py-3 px-2 text-right">${h.totalShares.toFixed(3)}</td>
+        <td class="py-3 px-2 text-right">${formatCurrency(avgPrice, cur)}</td>
+        <td class="py-3 px-2 text-right">${priceText}</td>
+        <td class="py-3 px-2 text-right ${ceClass} font-medium">${ceText}</td>
+        <td class="py-3 px-2 text-right ${returnClass} font-medium">${returnText}</td>
+        <td class="py-3 px-2 text-center space-x-1">
+          <button onclick="prefillTransaction('${h.ticker}', '${h.name.replace(/'/g, "\\'") }', 'BUY', ${currentPrice || 0}, '${currentCur}')" class="text-xs bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 px-2 py-1 rounded transition-colors">Buy</button>
+          <button onclick="prefillTransaction('${h.ticker}', '${h.name.replace(/'/g, "\\'") }', 'SELL', ${currentPrice || 0}, '${currentCur}')" class="text-xs bg-rose-600/20 hover:bg-rose-600/40 text-rose-400 px-2 py-1 rounded transition-colors">Sell</button>
+        </td>
+      </tr>
+    `;
+
+    return {
+      ticker: h.ticker,
+      name: h.name,
+      shares: h.totalShares,
+      avgPrice,
+      current: currentPrice,
+      chandelier: ceSignal || '',
+      return: returnPct,
+      html
+    };
+  });
+
+  if (holdingsSortCol) {
+    rerenderHoldings();
+    updateSortIndicators('h', holdingsSortCol);
+  } else {
+    holdingsBody.innerHTML = cachedHoldingsRows.map(r => r.html).join('');
+  }
+
+  // Update summary cards (always in INR)
+  const unrealizedPnlINR = totalCurrentValueINR - totalInvestedINR;
+  const totalPnlPct = totalInvestedINR > 0 ? (unrealizedPnlINR / totalInvestedINR) * 100 : 0;
+
+  totalInvestedEl.textContent = formatINR(totalInvestedINR);
+  currentValueEl.textContent = formatINR(totalCurrentValueINR);
+  renderPnl(unrealizedPnlEl, unrealizedPnlINR);
+  renderPnl(realizedPnlEl, totalRealizedPnlINR);
+  renderPnlPct(totalPnlPctEl, totalPnlPct);
+}
+
+// Fetch exchange rates for multiple currencies at once
+async function fetchExchangeRates(currencies) {
+  const rates = { INR: 1 };
+  const toFetch = currencies.filter(c => c !== 'INR' && !rates[c]);
+
+  await Promise.all(toFetch.map(async (currency) => {
+    try {
+      const data = await apiExchangeRate(currency);
+      rates[currency] = data.rate;
+    } catch {
+      rates[currency] = 1;
+    }
+  }));
+
+  return rates;
+}
+
+function renderPnl(el, value) {
+  const formatted = value >= 0 ? `+${formatINR(value)}` : `-${formatINR(Math.abs(value))}`;
+  el.textContent = formatted;
+  el.className = el.className.replace(/text-emerald-400|text-rose-500|text-gray-100/g, '');
+  if (value > 0) {
+    el.classList.add('text-emerald-400');
+  } else if (value < 0) {
+    el.classList.add('text-rose-500');
+  } else {
+    el.classList.add('text-gray-100');
+  }
+}
+
+function renderPnlPct(el, value) {
+  const formatted = `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+  el.textContent = formatted;
+  el.className = el.className.replace(/text-emerald-400|text-rose-500|text-gray-100/g, '');
+  if (value > 0) {
+    el.classList.add('text-emerald-400');
+  } else if (value < 0) {
+    el.classList.add('text-rose-500');
+  } else {
+    el.classList.add('text-gray-100');
+  }
+}
+
+// --- Sorting State ---
+let holdingsSortCol = null;
+let holdingsSortAsc = true;
+let cachedHoldingsRows = []; // store row data for re-sorting
+
+let transactionsSortCol = 'date';
+let transactionsSortAsc = false;
+let cachedTransactions = [];
+
+function updateSortIndicators(prefix, activeCol) {
+  const cols = prefix === 'h'
+    ? ['ticker', 'name', 'shares', 'avgPrice', 'current', 'chandelier', 'return']
+    : ['date', 'ticker', 'type', 'quantity', 'price', 'total'];
+  cols.forEach(col => {
+    const el = document.getElementById(`sort-${prefix}-${col}`);
+    if (el) el.textContent = col === activeCol ? (prefix === 'h' ? (holdingsSortAsc ? '▲' : '▼') : (transactionsSortAsc ? '▲' : '▼')) : '';
+  });
+}
+
+function sortHoldings(col) {
+  if (holdingsSortCol === col) {
+    holdingsSortAsc = !holdingsSortAsc;
+  } else {
+    holdingsSortCol = col;
+    holdingsSortAsc = true;
+  }
+  updateSortIndicators('h', col);
+  rerenderHoldings();
+}
+
+function rerenderHoldings() {
+  if (cachedHoldingsRows.length === 0) return;
+  const sorted = [...cachedHoldingsRows].sort((a, b) => {
+    let va = a[holdingsSortCol];
+    let vb = b[holdingsSortCol];
+    if (typeof va === 'string') { va = va.toLowerCase(); vb = vb.toLowerCase(); }
+    if (va == null) va = holdingsSortAsc ? Infinity : -Infinity;
+    if (vb == null) vb = holdingsSortAsc ? Infinity : -Infinity;
+    if (va < vb) return holdingsSortAsc ? -1 : 1;
+    if (va > vb) return holdingsSortAsc ? 1 : -1;
+    return 0;
+  });
+  holdingsBody.innerHTML = sorted.map(r => r.html).join('');
+}
+
+function sortTransactions(col) {
+  if (transactionsSortCol === col) {
+    transactionsSortAsc = !transactionsSortAsc;
+  } else {
+    transactionsSortCol = col;
+    transactionsSortAsc = col === 'date' ? false : true;
+  }
+  updateSortIndicators('t', col);
+  rerenderTransactions();
+}
+
+function rerenderTransactions() {
+  if (cachedTransactions.length === 0) return;
+  const sorted = [...cachedTransactions].sort((a, b) => {
+    let va = a[transactionsSortCol];
+    let vb = b[transactionsSortCol];
+    if (typeof va === 'string') { va = va.toLowerCase(); vb = vb.toLowerCase(); }
+    if (va < vb) return transactionsSortAsc ? -1 : 1;
+    if (va > vb) return transactionsSortAsc ? 1 : -1;
+    return 0;
+  });
+  transactionsBody.innerHTML = sorted.map(r => r.html).join('');
+}
+
+// --- CSV Export ---
+function downloadCSV(filename, csvContent) {
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportHoldingsCSV() {
+  const table = document.getElementById('holdings-body');
+  const rows = table.querySelectorAll('tr');
+  if (rows.length === 0) {
+    showToast('No holdings to export', 'info');
+    return;
+  }
+
+  const headers = ['Ticker', 'Name', 'Shares', 'Avg Price', 'Current Price', 'Chandelier Exit', 'Return'];
+  const csvRows = [headers.join(',')];
+
+  rows.forEach(row => {
+    const cells = row.querySelectorAll('td');
+    const values = Array.from(cells).map(cell => {
+      const text = cell.textContent.trim().replace(/,/g, '');
+      return `"${text}"`;
+    });
+    csvRows.push(values.join(','));
+  });
+
+  downloadCSV(`holdings_${new Date().toISOString().split('T')[0]}.csv`, csvRows.join('\n'));
+  showToast('Holdings exported successfully', 'success');
+}
+
+function exportTransactionsCSV() {
+  const table = document.getElementById('transactions-body');
+  const rows = table.querySelectorAll('tr');
+  if (rows.length === 0) {
+    showToast('No transactions to export', 'info');
+    return;
+  }
+
+  const headers = ['Date', 'Ticker', 'Type', 'Quantity', 'Price', 'Total'];
+  const csvRows = [headers.join(',')];
+
+  rows.forEach(row => {
+    const cells = row.querySelectorAll('td');
+    // Skip the last cell (delete button)
+    const values = Array.from(cells).slice(0, -1).map(cell => {
+      const text = cell.textContent.trim().replace(/,/g, '');
+      return `"${text}"`;
+    });
+    csvRows.push(values.join(','));
+  });
+
+  downloadCSV(`transactions_${new Date().toISOString().split('T')[0]}.csv`, csvRows.join('\n'));
+  showToast('Transactions exported successfully', 'success');
+}
+
+// --- Initialize ---
+initSupabase();
+loadDashboard();

@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stock Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            slate: {
+              900: '#121214',
+              800: '#1f2937',
+              700: '#2d3748'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="bg-[#121214] text-gray-100 min-h-screen font-sans">
+
+  <!-- Header -->
+  <header class="border-b border-gray-800 px-6 py-4 flex items-center gap-4">
+    <button id="toggle-form-btn" onclick="toggleTransactionPanel()" class="text-gray-400 hover:text-white transition-colors" title="New Transaction">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+      </svg>
+    </button>
+    <h1 class="text-2xl font-bold tracking-tight">
+      <span class="text-emerald-400">◈</span> Stock Tracker
+    </h1>
+  </header>
+
+  <!-- Slide-out Transaction Panel -->
+  <div id="transaction-panel" class="fixed inset-y-0 left-0 z-40 w-80 bg-[#1f2937] border-r border-gray-700 transform -translate-x-full transition-transform duration-300 overflow-y-auto">
+    <div class="p-6">
+      <div class="flex justify-between items-center mb-5">
+        <h2 class="text-lg font-semibold">New Transaction</h2>
+        <button onclick="toggleTransactionPanel()" class="text-gray-400 hover:text-white text-xl">&times;</button>
+      </div>
+      <form id="transaction-form" class="space-y-4">
+
+        <div class="relative">
+          <label for="input-ticker" class="block text-sm text-gray-400 mb-1">Stock Ticker</label>
+          <input type="text" id="input-ticker" placeholder="e.g. AAPL, TCS, RELIANCE" autocomplete="off"
+            class="w-full bg-[#121214] border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 uppercase" />
+          <ul id="ticker-dropdown" class="absolute z-50 w-full mt-1 bg-[#1a1a2e] border border-gray-700 rounded-lg shadow-xl max-h-60 overflow-y-auto hidden"></ul>
+        </div>
+
+        <div>
+          <label for="input-name" class="block text-sm text-gray-400 mb-1">Company Name</label>
+          <input type="text" id="input-name" placeholder="Auto-filled from lookup"
+            class="w-full bg-[#121214] border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50" />
+          <p id="lookup-status" class="text-xs text-gray-500 mt-1 hidden">Looking up ticker...</p>
+        </div>
+
+        <div>
+          <label for="input-type" class="block text-sm text-gray-400 mb-1">Transaction Type</label>
+          <select id="input-type"
+            class="w-full bg-[#121214] border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50">
+            <option value="BUY">BUY</option>
+            <option value="SELL">SELL</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="input-date" class="block text-sm text-gray-400 mb-1">Date & Time</label>
+          <input type="datetime-local" id="input-date"
+            class="w-full bg-[#121214] border border-gray-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/50" />
+        </div>
+
+        <div>
+          <label for="input-quantity" class="block text-sm text-gray-400 mb-1">Quantity</label>
+          <input type="number" id="input-quantity" step="0.001" min="0.001" placeholder="10"
+            class="w-full bg-[#121214] border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50" />
+        </div>
+
+        <div>
+          <label for="input-price" class="block text-sm text-gray-400 mb-1">Price per Share</label>
+          <input type="number" id="input-price" step="0.01" min="0.01" placeholder="175.50"
+            class="w-full bg-[#121214] border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50" />
+        </div>
+
+        <button type="submit"
+          class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 rounded-lg transition-colors duration-200">
+          Add Transaction
+        </button>
+
+        <p id="form-error" class="text-rose-500 text-sm hidden"></p>
+      </form>
+    </div>
+  </div>
+
+  <!-- Overlay for panel -->
+  <div id="panel-overlay" class="fixed inset-0 bg-black/50 z-30 hidden" onclick="toggleTransactionPanel()"></div>
+
+  <main class="max-w-7xl mx-auto px-6 py-8 space-y-8">
+
+    <!-- Summary Cards -->
+    <section id="summary-section" class="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div class="bg-[#1f2937] rounded-xl p-5 border border-gray-700/50">
+        <p class="text-xs text-gray-400 uppercase tracking-wide">Total Invested</p>
+        <p id="total-invested" class="text-2xl font-bold mt-1">₹0.00</p>
+      </div>
+      <div class="bg-[#1f2937] rounded-xl p-5 border border-gray-700/50">
+        <p class="text-xs text-gray-400 uppercase tracking-wide">Current Value</p>
+        <p id="current-value" class="text-2xl font-bold mt-1">₹0.00</p>
+      </div>
+      <div class="bg-[#1f2937] rounded-xl p-5 border border-gray-700/50">
+        <p class="text-xs text-gray-400 uppercase tracking-wide">Unrealized P&L</p>
+        <p id="unrealized-pnl" class="text-2xl font-bold mt-1">₹0.00</p>
+      </div>
+      <div class="bg-[#1f2937] rounded-xl p-5 border border-gray-700/50">
+        <p class="text-xs text-gray-400 uppercase tracking-wide">Realized P&L</p>
+        <p id="realized-pnl" class="text-2xl font-bold mt-1">₹0.00</p>
+      </div>
+      <div class="bg-[#1f2937] rounded-xl p-5 border border-gray-700/50">
+        <p class="text-xs text-gray-400 uppercase tracking-wide">Total P/L %</p>
+        <p id="total-pnl-pct" class="text-2xl font-bold mt-1">0.00%</p>
+      </div>
+    </section>
+
+    <!-- Full-width tables -->
+    <section class="space-y-8">
+
+        <!-- Current Holdings Table -->
+        <div class="bg-[#1f2937] rounded-xl p-6 border border-gray-700/50">
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="text-lg font-semibold">Current Holdings</h2>
+            <button onclick="exportHoldingsCSV()" class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">Export CSV</button>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="text-gray-400 border-b border-gray-700">
+                  <th class="text-left py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortHoldings('ticker')">Ticker <span id="sort-h-ticker"></span></th>
+                  <th class="text-left py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortHoldings('name')">Name <span id="sort-h-name"></span></th>
+                  <th class="text-right py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortHoldings('shares')">Shares <span id="sort-h-shares"></span></th>
+                  <th class="text-right py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortHoldings('avgPrice')">Avg Price <span id="sort-h-avgPrice"></span></th>
+                  <th class="text-right py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortHoldings('current')">Current <span id="sort-h-current"></span></th>
+                  <th class="text-right py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortHoldings('chandelier')">Chandelier Exit <span id="sort-h-chandelier"></span></th>
+                  <th class="text-right py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortHoldings('return')">Return <span id="sort-h-return"></span></th>
+                  <th class="text-center py-3 px-2">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="holdings-body" class="divide-y divide-gray-700/50">
+                <!-- Populated by app.js -->
+              </tbody>
+            </table>
+            <p id="holdings-empty" class="text-gray-500 text-center py-6 hidden">No holdings yet.</p>
+          </div>
+        </div>
+
+        <!-- Transaction Log -->
+        <div class="bg-[#1f2937] rounded-xl p-6 border border-gray-700/50">
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="text-lg font-semibold">Transaction Log</h2>
+            <button onclick="exportTransactionsCSV()" class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">Export CSV</button>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="text-gray-400 border-b border-gray-700">
+                  <th class="text-left py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortTransactions('date')">Date & Time <span id="sort-t-date"></span></th>
+                  <th class="text-left py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortTransactions('ticker')">Ticker <span id="sort-t-ticker"></span></th>
+                  <th class="text-left py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortTransactions('type')">Type <span id="sort-t-type"></span></th>
+                  <th class="text-right py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortTransactions('quantity')">Qty <span id="sort-t-quantity"></span></th>
+                  <th class="text-right py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortTransactions('price')">Price <span id="sort-t-price"></span></th>
+                  <th class="text-right py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortTransactions('total')">Total <span id="sort-t-total"></span></th>
+                  <th class="text-center py-3 px-2"></th>
+                </tr>
+              </thead>
+              <tbody id="transactions-body" class="divide-y divide-gray-700/50">
+                <!-- Populated by app.js -->
+              </tbody>
+            </table>
+            <p id="transactions-empty" class="text-gray-500 text-center py-6 hidden">No transactions recorded.</p>
+          </div>
+        </div>
+
+    </section>
+  </main>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2"></div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

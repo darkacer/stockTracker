@@ -1,0 +1,24 @@
+{
+  "name": "stock-tracker",
+  "version": "1.0.0",
+  "description": "A lightweight, self-hosted web application to track stock purchases and sales",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "stock",
+    "tracker",
+    "portfolio"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.108.1",
+    "dotenv": "^16.6.1",
+    "express": "^4.18.2",
+    "uuid": "^9.0.0",
+    "yahoo-finance2": "^2.11.0"
+  }
+}
