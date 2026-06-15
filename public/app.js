@@ -579,10 +579,18 @@ async function renderHoldings(transactions) {
       ? (currentPrice >= ma50 ? 'text-emerald-400' : 'text-rose-500')
       : 'text-gray-400';
 
+    // % below 52W High
+    const belowHigh = (weekHigh != null && currentPrice != null && weekHigh > 0)
+      ? ((weekHigh - currentPrice) / weekHigh) * 100
+      : null;
+    const belowHighText = belowHigh != null ? `-${belowHigh.toFixed(1)}%` : 'N/A';
+    const belowHighClass = belowHigh != null
+      ? (belowHigh <= 10 ? 'text-emerald-400' : belowHigh <= 25 ? 'text-yellow-400' : 'text-rose-500')
+      : 'text-gray-400';
+
     const html = `
       <tr class="hover:bg-gray-800/50">
         <td class="py-3 px-2 font-medium"><a href="https://in.tradingview.com/symbols/${h.ticker.replace(/\.(NS|BO|BSE)$/i, '')}" target="_blank" class="text-blue-400 hover:text-blue-300 hover:underline">${h.ticker}</a></td>
-        <td class="py-3 px-2 text-gray-300">${h.name}</td>
         <td class="py-3 px-2 text-right">${h.totalShares.toFixed(3)}</td>
         <td class="py-3 px-2 text-right">${formatCurrency(avgPrice, cur)}</td>
         <td class="py-3 px-2 text-right">${priceText}</td>
@@ -590,6 +598,7 @@ async function renderHoldings(transactions) {
         <td class="py-3 px-2 text-right ${ma50Class}">${ma50Text}</td>
         <td class="py-3 px-2 text-right text-gray-300">${weekHighText}</td>
         <td class="py-3 px-2 text-right text-gray-300">${weekLowText}</td>
+        <td class="py-3 px-2 text-right ${belowHighClass} font-medium">${belowHighText}</td>
         <td class="py-3 px-2 text-right ${ceClass} font-medium">${ceText}</td>
         <td class="py-3 px-2 text-right ${returnClass} font-medium">${returnText}</td>
         <td class="py-3 px-2 text-center space-x-1">
@@ -609,6 +618,7 @@ async function renderHoldings(transactions) {
       ma50: ma50 || 0,
       weekHigh: weekHigh || 0,
       weekLow: weekLow || 0,
+      belowHigh: belowHigh || 0,
       chandelier: ceText || '',
       return: returnPct,
       html
