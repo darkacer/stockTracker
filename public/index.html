@@ -100,7 +100,7 @@
   <!-- Overlay for panel -->
   <div id="panel-overlay" class="fixed inset-0 bg-black/50 z-30 hidden" onclick="toggleTransactionPanel()"></div>
 
-  <main class="max-w-7xl mx-auto px-6 py-8 space-y-8">
+  <main class="max-w-[1600px] mx-auto px-6 py-8 space-y-8">
 
     <!-- Summary Cards -->
     <section id="summary-section" class="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -136,7 +136,7 @@
             <button onclick="exportHoldingsCSV()" class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">Export CSV</button>
           </div>
           <div class="overflow-x-auto">
-            <table class="w-full text-sm">
+            <table class="w-full text-sm whitespace-nowrap">
               <thead>
                 <tr class="text-gray-400 border-b border-gray-700">
                   <th class="text-left py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortHoldings('ticker')">Ticker <span id="sort-h-ticker"></span></th>
