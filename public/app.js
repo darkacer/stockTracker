@@ -609,7 +609,7 @@ async function renderHoldings(transactions) {
       ma50: ma50 || 0,
       weekHigh: weekHigh || 0,
       weekLow: weekLow || 0,
-      chandelier: ceSignal || '',
+      chandelier: ceText || '',
       return: returnPct,
       html
     };
