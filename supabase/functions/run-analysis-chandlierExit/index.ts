@@ -6,10 +6,10 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 Deno.serve(async (req) => {
   try {
-    // 1. Grab our active watchlist
+    // 1. Grab our active watchlist (including current chandelier state)
     const { data: stocks, error: stocksError } = await supabase
       .from('stocks_list')
-      .select('ticker');
+      .select('ticker, algo_chandelier_exit');
 
     if (stocksError || !stocks) throw new Error("Could not fetch target watchlist.");
 
@@ -85,7 +85,21 @@ Deno.serve(async (req) => {
       if (dir === 1 && prevDir === -1) currentSignal = "BUY";
       if (dir === -1 && prevDir === 1) currentSignal = "SELL";
 
-      // 4. Update the pre-computed JSON payload directly into the stocks_list record
+      // 4. Detect signal change before updating
+      const oldState = stock.algo_chandelier_exit?.marketState || null;
+      if (oldState && oldState !== marketState) {
+        await supabase
+          .from('signal_changes')
+          .insert({
+            ticker,
+            indicator: 'chandelier_exit',
+            old_value: oldState,
+            new_value: marketState
+          });
+        console.log(`[signal-change] ${ticker}: ${oldState} → ${marketState}`);
+      }
+
+      // 5. Update the pre-computed JSON payload directly into the stocks_list record
       const calculationPayload = {
         marketState,
         currentSignal,
@@ -98,7 +112,7 @@ Deno.serve(async (req) => {
         .update({ algo_chandelier_exit: calculationPayload })
         .eq('ticker', ticker);
 
-      executionSummary.push({ ticker, status: 'Analyzed' });
+      executionSummary.push({ ticker, status: 'Analyzed', changed: oldState !== marketState });
     }
 
     return new Response(JSON.stringify({ success: true, processed: executionSummary }), {

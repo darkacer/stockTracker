@@ -531,6 +531,7 @@ async function renderHoldings(transactions) {
           const data = await res.json();
           Object.assign(fundamentalsData, data.fundamentals || {});
           Object.assign(maData, data.movingAverages || {});
+          if (data.signalChanges) window._signalChanges = data.signalChanges;
         }
       } catch {}
     })()
@@ -581,6 +582,12 @@ async function renderHoldings(transactions) {
       ? (ceState === 'BULLISH' ? 'text-emerald-400' : 'text-rose-500')
       : 'text-gray-400';
 
+    // Signal change badge
+    const changes = (window._signalChanges || []).filter(c => c.ticker === h.ticker);
+    const changeBadge = changes.length > 0
+      ? ` <span class="ml-1 px-1 py-0.5 text-[9px] font-bold rounded ${changes[0].new_value === 'BULLISH' ? 'bg-emerald-600/30 text-emerald-300' : 'bg-rose-600/30 text-rose-300'}" title="${changes[0].old_value} → ${changes[0].new_value} (${new Date(changes[0].changed_at).toLocaleDateString()})">⚡</span>`
+      : '';
+
     // Fundamentals & Moving Averages
     const fund = fundamentalsData[h.ticker];
     const ma = maData[h.ticker] || {};
@@ -613,7 +620,7 @@ async function renderHoldings(transactions) {
 
     const html = `
       <tr class="hover:bg-gray-800/50">
-        <td class="py-3 px-2 font-medium"><a href="https://in.tradingview.com/symbols/${h.ticker.replace(/\.(NS|BO|BSE)$/i, '')}" target="_blank" class="text-blue-400 hover:text-blue-300 hover:underline">${h.ticker}</a></td>
+        <td class="py-3 px-2 font-medium"><a href="https://in.tradingview.com/symbols/${h.ticker.replace(/\.(NS|BO|BSE)$/i, '')}" target="_blank" class="text-blue-400 hover:text-blue-300 hover:underline">${h.ticker}</a>${changeBadge}</td>
         <td class="py-3 px-2 text-right">${h.totalShares.toFixed(3)}</td>
         <td class="py-3 px-2 text-right">${formatCurrency(avgPrice, cur)}</td>
         <td class="py-3 px-2 text-right">${priceText}</td>
@@ -664,6 +671,19 @@ async function renderHoldings(transactions) {
   renderPnl(unrealizedPnlEl, unrealizedPnlINR);
   renderPnl(realizedPnlEl, totalRealizedPnlINR);
   renderPnlPct(totalPnlPctEl, totalPnlPct);
+
+  // Show toasts for recent signal changes
+  const sc = window._signalChanges || [];
+  if (sc.length > 0) {
+    const grouped = {};
+    sc.forEach(c => { if (!grouped[c.ticker]) grouped[c.ticker] = c; });
+    Object.values(grouped).forEach((c, i) => {
+      setTimeout(() => {
+        const arrow = c.new_value === 'BULLISH' ? '→ BUY' : '→ SELL';
+        showToast(`⚡ ${c.ticker} signal changed ${arrow}`, c.new_value === 'BULLISH' ? 'success' : 'error');
+      }, i * 800);
+    });
+  }
 }
 
 // Fetch exchange rates for multiple currencies at once

@@ -427,7 +427,20 @@ app.post('/api/holdings-data', async (req, res) => {
 
     console.log('[holdings-data] MA tickers processed:', Object.keys(movingAverages).length);
 
-    res.json({ fundamentals, movingAverages });
+    // Fetch recent signal changes (last 7 days) for these tickers
+    const signalChanges = [];
+    try {
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const changesResponse = await supabaseFetch(
+        `signal_changes?ticker=in.(${tickerFilter})&changed_at=gte.${sevenDaysAgo}&order=changed_at.desc&select=ticker,indicator,old_value,new_value,changed_at`
+      );
+      if (changesResponse.ok) {
+        const data = await changesResponse.json();
+        signalChanges.push(...data);
+      }
+    } catch {}
+
+    res.json({ fundamentals, movingAverages, signalChanges });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch holdings data' });
   }
