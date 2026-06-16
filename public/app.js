@@ -454,8 +454,11 @@ async function renderHoldings(transactions) {
     }
   }
 
-  // Filter to tickers with positive holdings
-  const activeHoldings = Object.values(holdingsMap).filter(h => h.totalShares > 0.0001);
+  // Include sold stocks only if toggle is checked
+  const showSold = document.getElementById('toggle-sold')?.checked;
+  const activeHoldings = Object.values(holdingsMap).filter(h => 
+    showSold ? h.totalShares >= 0 : h.totalShares > 0.0001
+  );
 
   if (activeHoldings.length === 0) {
     holdingsBody.innerHTML = '';
@@ -551,12 +554,12 @@ async function renderHoldings(transactions) {
   cachedHoldingsRows = activeHoldings.map(h => {
     const cur = h.currency;
     const rate = rates[cur] || 1;
-    const avgPrice = h.totalCost / h.totalShares;
+    const avgPrice = h.totalShares > 0 ? h.totalCost / h.totalShares : 0;
     const currentPrice = prices[h.ticker];
     const currentCur = priceCurrencies[h.ticker] || cur;
-    const currentVal = currentPrice != null ? currentPrice * h.totalShares : null;
-    const returnOriginal = currentVal != null ? currentVal - h.totalCost : null;
-    const returnPct = returnOriginal != null ? (returnOriginal / h.totalCost) * 100 : null;
+    const currentVal = currentPrice != null && h.totalShares > 0 ? currentPrice * h.totalShares : null;
+    const returnOriginal = currentVal != null && h.totalCost > 0 ? currentVal - h.totalCost : null;
+    const returnPct = returnOriginal != null && h.totalCost > 0 ? (returnOriginal / h.totalCost) * 100 : null;
 
     // Convert to INR for summary
     totalInvestedINR += h.totalCost * rate;

@@ -133,7 +133,13 @@
         <div class="bg-[#1f2937] rounded-xl p-6 border border-gray-700/50">
           <div class="flex justify-between items-center mb-4">
             <h2 class="text-lg font-semibold">Current Holdings</h2>
-            <button onclick="exportHoldingsCSV()" class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">Export CSV</button>
+            <div class="flex items-center gap-4">
+              <label class="flex items-center gap-2 text-xs text-gray-400 cursor-pointer select-none">
+                <input type="checkbox" id="toggle-sold" class="accent-emerald-500 w-3.5 h-3.5" onchange="loadDashboard()">
+                Show sold
+              </label>
+              <button onclick="exportHoldingsCSV()" class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">Export CSV</button>
+            </div>
           </div>
           <div class="overflow-x-auto">
             <table class="w-full text-sm whitespace-nowrap">
