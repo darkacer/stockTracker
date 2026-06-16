@@ -430,10 +430,13 @@ async function renderHoldings(transactions) {
   holdingsLoading.classList.remove('hidden');
   holdingsBody.innerHTML = '';
 
+  // Sort transactions chronologically (oldest first) for correct avg cost calculation
+  const sortedTxns = [...transactions].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
   // Aggregate by ticker
   const holdingsMap = {};
 
-  for (const t of transactions) {
+  for (const t of sortedTxns) {
     if (!holdingsMap[t.ticker]) {
       holdingsMap[t.ticker] = { ticker: t.ticker, name: t.name, currency: t.currency || 'INR', totalShares: 0, totalCost: 0, realizedPnl: 0 };
     }
