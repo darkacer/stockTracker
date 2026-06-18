@@ -694,18 +694,6 @@ async function renderHoldings(transactions) {
   updateRealizedCards();
   renderPnlPct(totalPnlPctEl, totalPnlPct);
 
-  // Show toasts for recent signal changes
-  const sc = window._signalChanges || [];
-  if (sc.length > 0) {
-    const grouped = {};
-    sc.forEach(c => { if (!grouped[c.ticker]) grouped[c.ticker] = c; });
-    Object.values(grouped).forEach((c, i) => {
-      setTimeout(() => {
-        const arrow = c.new_value === 'BULLISH' ? '→ BUY' : '→ SELL';
-        showToast(`⚡ ${c.ticker} signal changed ${arrow}`, c.new_value === 'BULLISH' ? 'success' : 'error');
-      }, i * 800);
-    });
-  }
 }
 
 // Fetch exchange rates for multiple currencies at once
