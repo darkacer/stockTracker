@@ -765,6 +765,10 @@ function updateSortIndicators(prefix, activeCol) {
 }
 
 function sortHoldings(col) {
+  // Uncheck alert sort when user explicitly sorts by a column
+  const alertToggle = document.getElementById('toggle-alerts-sort');
+  if (alertToggle) alertToggle.checked = false;
+
   if (holdingsSortCol === col) {
     holdingsSortAsc = !holdingsSortAsc;
   } else {
