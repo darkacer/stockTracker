@@ -582,6 +582,14 @@ async function renderHoldings(transactions) {
       ? (ceState === 'BULLISH' ? 'text-emerald-400' : 'text-rose-500')
       : 'text-gray-400';
 
+    // OTT indicator
+    const ottInfo = fund?.algo_ott;
+    const ottState = ottInfo?.marketState || null;
+    const ottText = ottState ? (ottState === 'BULLISH' ? 'BUY' : 'SELL') : 'N/A';
+    const ottClass = ottState
+      ? (ottState === 'BULLISH' ? 'text-emerald-400' : 'text-rose-500')
+      : 'text-gray-400';
+
     // Signal change badge
     const changes = (window._signalChanges || []).filter(c => c.ticker === h.ticker);
     const changeBadge = changes.length > 0
@@ -630,6 +638,7 @@ async function renderHoldings(transactions) {
         <td class="py-3 px-2 text-right text-gray-300">${weekLowText}</td>
         <td class="py-3 px-2 text-right ${belowHighClass} font-medium">${belowHighText}</td>
         <td class="py-3 px-2 text-right ${ceClass} font-medium">${ceText}</td>
+        <td class="py-3 px-2 text-right ${ottClass} font-medium">${ottText}</td>
         <td class="py-3 px-2 text-right ${returnClass} font-medium">${returnText}</td>
         <td class="py-3 px-2 text-center space-x-1">
           <button onclick="prefillTransaction('${h.ticker}', '${h.name.replace(/'/g, "\\'") }', 'BUY', ${currentPrice || 0}, '${currentCur}')" class="text-[10px] bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 px-1.5 py-0.5 rounded transition-colors font-bold">B</button>
@@ -650,6 +659,7 @@ async function renderHoldings(transactions) {
       weekLow: weekLow || 0,
       belowHigh: belowHigh || 0,
       chandelier: ceText || '',
+      ott: ottState === 'BULLISH' ? 1 : ottState === 'BEARISH' ? -1 : 0,
       return: returnPct,
       html
     };

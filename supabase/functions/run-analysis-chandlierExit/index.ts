@@ -18,25 +18,27 @@ Deno.serve(async (req) => {
     for (const stock of stocks) {
       const ticker = stock.ticker;
 
-      // 2. Fetch the last 100 candles ordered sequentially for mathematical consistency
-      const { data: candles, error: candleError } = await supabase
+      // 2. Fetch the latest 100 candles (desc) then reverse for chronological calculation
+      const { data: candlesDesc, error: candleError } = await supabase
         .from('stock_candles')
         .select('high, low, close, candle_date')
         .eq('ticker', ticker)
-        .order('candle_date', { ascending: true })
+        .order('candle_date', { ascending: false })
         .limit(100);
 
-      if (candleError || !candles || candles.length < 23) {
+      if (candleError || !candlesDesc || candlesDesc.length < 23) {
         continue; // Insufficient history to generate a stabilized ATR runway
       }
 
-      // 3. Process Chandelier Exit Mathematical Matrix (Length=22, Multiplier=3.0)
+      const candles = candlesDesc.reverse();
+
+      // 3. Process Chandelier Exit (Everget's Pine Script v6 — exact port)
       const length = 22;
       const mult = 3.0;
       const total = candles.length;
-      const tr: number[] = [];
-      const rmaAtr: number[] = [];
 
+      // Build TR array
+      const tr: number[] = [];
       tr.push(Number(candles[0].high) - Number(candles[0].low));
       for (let i = 1; i < total; i++) {
         const hl = Number(candles[i].high) - Number(candles[i].low);
@@ -45,18 +47,25 @@ Deno.serve(async (req) => {
         tr.push(Math.max(hl, hc, lc));
       }
 
-      let currentAtr = tr.slice(0, length).reduce((a, b) => a + b, 0) / length;
-      for (let i = 0; i < total; i++) {
-        if (i < length - 1) rmaAtr.push(0);
-        else if (i === length - 1) rmaAtr.push(currentAtr);
-        else {
-          currentAtr = (tr[i] + (length - 1) * currentAtr) / length;
-          rmaAtr.push(currentAtr);
-        }
+      // RMA-ATR: seed with SMA, then Wilder's smoothing — matches Pine's ta.atr(length)
+      let rmaVal = tr.slice(0, length).reduce((a, b) => a + b, 0) / length;
+      const rmaAtr: number[] = new Array(length).fill(0);
+      rmaAtr[length - 1] = rmaVal;
+      for (let i = length; i < total; i++) {
+        rmaVal = (tr[i] + (length - 1) * rmaVal) / length;
+        rmaAtr.push(rmaVal);
       }
 
-      let longStopPrev = 0, shortStopPrev = 0;
-      let dir = 1, prevDir = 1;
+      // Seed from first valid bar (i = length-1): nz(longStop[1], longStop) = longStop (no prev)
+      const initSlice = candles.slice(0, length);
+      const initHighest = Math.max(...initSlice.map(c => Number(c.close)));
+      const initLowest  = Math.min(...initSlice.map(c => Number(c.close)));
+      const initAtr = rmaAtr[length - 1] * mult;
+      let longStopPrev  = initHighest - initAtr;
+      let shortStopPrev = initLowest  + initAtr;
+      const firstClose = Number(candles[length - 1].close);
+      let dir = firstClose > shortStopPrev ? 1 : firstClose < longStopPrev ? -1 : 1;
+      let prevDir = dir;
 
       for (let i = length; i < total; i++) {
         const cCurr = Number(candles[i].close);
