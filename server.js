@@ -430,7 +430,7 @@ app.post('/api/holdings-data', async (req, res) => {
     // Fetch recent signal changes (last 7 days) for these tickers
     const signalChanges = [];
     try {
-      const sevenDaysAgo = new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString();
+      const sevenDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
       const changesResponse = await supabaseFetch(
         `signal_changes?ticker=in.(${tickerFilter})&changed_at=gte.${sevenDaysAgo}&order=changed_at.desc&select=ticker,indicator,old_value,new_value,changed_at`
       );
