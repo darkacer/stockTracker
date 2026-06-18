@@ -106,23 +106,47 @@
     <section id="summary-section" class="grid grid-cols-2 md:grid-cols-5 gap-4">
       <div class="bg-[#1f2937] rounded-xl p-5 border border-gray-700/50">
         <p class="text-xs text-gray-400 uppercase tracking-wide">Total Invested</p>
-        <p id="total-invested" class="text-2xl font-bold mt-1">₹0.00</p>
+        <p id="total-invested" class="text-3xl font-bold mt-1">₹0.00</p>
       </div>
       <div class="bg-[#1f2937] rounded-xl p-5 border border-gray-700/50">
         <p class="text-xs text-gray-400 uppercase tracking-wide">Current Value</p>
-        <p id="current-value" class="text-2xl font-bold mt-1">₹0.00</p>
+        <p id="current-value" class="text-3xl font-bold mt-1">₹0.00</p>
       </div>
       <div class="bg-[#1f2937] rounded-xl p-5 border border-gray-700/50">
         <p class="text-xs text-gray-400 uppercase tracking-wide">Unrealized P&L</p>
-        <p id="unrealized-pnl" class="text-2xl font-bold mt-1">₹0.00</p>
+        <p id="unrealized-pnl" class="text-3xl font-bold mt-1">₹0.00</p>
       </div>
       <div class="bg-[#1f2937] rounded-xl p-5 border border-gray-700/50">
-        <p class="text-xs text-gray-400 uppercase tracking-wide">Realized P&L</p>
-        <p id="realized-pnl" class="text-2xl font-bold mt-1">₹0.00</p>
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-xs text-gray-400 uppercase tracking-wide">Realized P&L</p>
+          <select id="realized-period" onchange="updateRealizedCards()" class="text-[10px] bg-[#121214] border border-gray-700 text-gray-400 rounded px-1 py-0.5 focus:outline-none cursor-pointer">
+            <option value="1D">1D</option>
+            <option value="1W">1W</option>
+            <option value="1FN">1FN</option>
+            <option value="1M" selected>1M</option>
+            <option value="1Q">1Q</option>
+          </select>
+        </div>
+        <div class="flex flex-col gap-1">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] text-gray-500 uppercase tracking-wide">Profit</span>
+            <p id="realized-profit" class="text-xl font-bold">₹0.00</p>
+          </div>
+          <div class="border-t border-gray-700/50"></div>
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] text-gray-500 uppercase tracking-wide">Loss</span>
+            <p id="realized-loss" class="text-xl font-bold">₹0.00</p>
+          </div>
+          <div class="border-t border-gray-700/50"></div>
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] text-gray-500 uppercase tracking-wide">Net</span>
+            <p id="realized-net" class="text-xl font-bold">₹0.00</p>
+          </div>
+        </div>
       </div>
       <div class="bg-[#1f2937] rounded-xl p-5 border border-gray-700/50">
         <p class="text-xs text-gray-400 uppercase tracking-wide">Total P/L %</p>
-        <p id="total-pnl-pct" class="text-2xl font-bold mt-1">0.00%</p>
+        <p id="total-pnl-pct" class="text-3xl font-bold mt-1">0.00%</p>
       </div>
     </section>
 
@@ -203,6 +227,30 @@
               </tbody>
             </table>
             <p id="transactions-empty" class="text-gray-500 text-center py-6 hidden">No transactions recorded.</p>
+          </div>
+        </div>
+
+        <!-- Realized P&L Breakdown -->
+        <div class="bg-[#1f2937] rounded-xl p-6 border border-gray-700/50">
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="text-lg font-semibold">Realized P&L Breakdown <span class="text-xs text-gray-500 font-normal ml-1">(matches period filter on card)</span></h2>
+          </div>
+          <div class="overflow-x-auto max-h-[50vh] overflow-y-auto">
+            <table class="w-full text-sm whitespace-nowrap">
+              <thead class="sticky top-0 z-10 bg-gray-900">
+                <tr class="text-gray-400 border-b border-gray-700">
+                  <th class="text-left py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortBreakdown('date')">Date <span id="sort-b-date">▼</span></th>
+                  <th class="text-left py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortBreakdown('ticker')">Ticker <span id="sort-b-ticker"></span></th>
+                  <th class="text-right py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortBreakdown('quantity')">Qty Sold <span id="sort-b-quantity"></span></th>
+                  <th class="text-right py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortBreakdown('sellPrice')">Sell Price <span id="sort-b-sellPrice"></span></th>
+                  <th class="text-right py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortBreakdown('avgCost')">Avg Cost <span id="sort-b-avgCost"></span></th>
+                  <th class="text-right py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortBreakdown('pnlINR')">Realized P&L <span id="sort-b-pnlINR"></span></th>
+                </tr>
+              </thead>
+              <tbody id="realized-breakdown-body" class="divide-y divide-gray-700/50">
+              </tbody>
+            </table>
+            <p id="realized-breakdown-empty" class="text-gray-500 text-center py-6">No SELL transactions in this period.</p>
           </div>
         </div>
 

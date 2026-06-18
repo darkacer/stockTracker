@@ -154,7 +154,9 @@ const formError = document.getElementById('form-error');
 
 const totalInvestedEl = document.getElementById('total-invested');
 const currentValueEl = document.getElementById('current-value');
-const realizedPnlEl = document.getElementById('realized-pnl');
+const realizedProfitEl = document.getElementById('realized-profit');
+const realizedLossEl = document.getElementById('realized-loss');
+const realizedNetEl = document.getElementById('realized-net');
 const unrealizedPnlEl = document.getElementById('unrealized-pnl');
 const totalPnlPctEl = document.getElementById('total-pnl-pct');
 
@@ -438,7 +440,7 @@ async function renderHoldings(transactions) {
 
   for (const t of sortedTxns) {
     if (!holdingsMap[t.ticker]) {
-      holdingsMap[t.ticker] = { ticker: t.ticker, name: t.name, currency: t.currency || 'INR', totalShares: 0, totalCost: 0, realizedPnl: 0 };
+      holdingsMap[t.ticker] = { ticker: t.ticker, name: t.name, currency: t.currency || 'INR', totalShares: 0, totalCost: 0, realizedPnl: 0, realizedSells: [] };
     }
 
     const h = holdingsMap[t.ticker];
@@ -448,7 +450,9 @@ async function renderHoldings(transactions) {
     } else {
       // SELL: calculate realized P&L using average cost
       const avgCost = h.totalShares > 0 ? h.totalCost / h.totalShares : 0;
-      h.realizedPnl += (t.price - avgCost) * t.quantity;
+      const pnl = (t.price - avgCost) * t.quantity;
+      h.realizedPnl += pnl;
+      h.realizedSells.push({ date: t.date, pnl, ticker: h.ticker, currency: h.currency, quantity: t.quantity, sellPrice: t.price, avgCost });
       h.totalCost -= avgCost * t.quantity;
       h.totalShares -= t.quantity;
     }
@@ -469,12 +473,14 @@ async function renderHoldings(transactions) {
     const allHoldings = Object.values(holdingsMap);
     const currencies = [...new Set(allHoldings.map(h => h.currency))];
     const rates = await fetchExchangeRates(currencies);
-    const totalRealizedPnl = allHoldings.reduce((sum, h) => sum + h.realizedPnl * (rates[h.currency] || 1), 0);
+
+    window._cachedRealizedSells = allHoldings.flatMap(h => h.realizedSells || []);
+    window._cachedRates = rates;
 
     totalInvestedEl.textContent = formatINR(0);
     currentValueEl.textContent = formatINR(0);
     renderPnl(unrealizedPnlEl, 0);
-    renderPnl(realizedPnlEl, totalRealizedPnl);
+    updateRealizedCards();
     renderPnlPct(totalPnlPctEl, 0);
     return;
   }
@@ -546,11 +552,11 @@ async function renderHoldings(transactions) {
   ])];
   const rates = await fetchExchangeRates(allCurrencies);
 
+  window._cachedRealizedSells = Object.values(holdingsMap).flatMap(h => h.realizedSells || []);
+  window._cachedRates = rates;
+
   let totalInvestedINR = 0;
   let totalCurrentValueINR = 0;
-  const totalRealizedPnlINR = Object.values(holdingsMap).reduce(
-    (sum, h) => sum + h.realizedPnl * (rates[h.currency] || 1), 0
-  );
 
   cachedHoldingsRows = activeHoldings.map(h => {
     const cur = h.currency;
@@ -685,7 +691,7 @@ async function renderHoldings(transactions) {
   totalInvestedEl.textContent = formatINR(totalInvestedINR);
   currentValueEl.textContent = formatINR(totalCurrentValueINR);
   renderPnl(unrealizedPnlEl, unrealizedPnlINR);
-  renderPnl(realizedPnlEl, totalRealizedPnlINR);
+  updateRealizedCards();
   renderPnlPct(totalPnlPctEl, totalPnlPct);
 
   // Show toasts for recent signal changes
@@ -717,6 +723,79 @@ async function fetchExchangeRates(currencies) {
   }));
 
   return rates;
+}
+
+function getPeriodCutoff(period) {
+  const now = Date.now();
+  const msDay = 24 * 60 * 60 * 1000;
+  switch (period) {
+    case '1D':  return new Date(now - 1  * msDay);
+    case '1W':  return new Date(now - 7  * msDay);
+    case '1FN': return new Date(now - 14 * msDay);
+    case '1M':  return new Date(now - 30 * msDay);
+    case '1Q':  return new Date(now - 90 * msDay);
+    default:    return new Date(0);
+  }
+}
+
+function updateRealizedCards() {
+  const period = document.getElementById('realized-period')?.value || '1M';
+  const cutoff = getPeriodCutoff(period);
+  const sells = window._cachedRealizedSells || [];
+  const rates = window._cachedRates || {};
+
+  let profit = 0;
+  let loss = 0;
+  const filtered = [];
+  sells.forEach(s => {
+    if (new Date(s.date) >= cutoff) {
+      const pnlINR = s.pnl * (rates[s.currency] || 1);
+      if (pnlINR >= 0) profit += pnlINR;
+      else loss += pnlINR;
+      filtered.push({ ...s, pnlINR });
+    }
+  });
+
+  renderPnl(realizedProfitEl, profit);
+  renderPnl(realizedLossEl, loss);
+  renderPnl(realizedNetEl, profit + loss);
+
+  // Render breakdown table
+  const tbody = document.getElementById('realized-breakdown-body');
+  const empty = document.getElementById('realized-breakdown-empty');
+  if (!tbody) return;
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '';
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+
+  // Sort by selected column
+  filtered.sort((a, b) => {
+    let va = a[breakdownSortCol];
+    let vb = b[breakdownSortCol];
+    if (typeof va === 'string') { va = va.toLowerCase(); vb = vb.toLowerCase(); }
+    if (va == null) va = breakdownSortAsc ? Infinity : -Infinity;
+    if (vb == null) vb = breakdownSortAsc ? Infinity : -Infinity;
+    if (va < vb) return breakdownSortAsc ? -1 : 1;
+    if (va > vb) return breakdownSortAsc ? 1 : -1;
+    return 0;
+  });
+  tbody.innerHTML = filtered.map(s => {
+    const pnlClass = s.pnlINR >= 0 ? 'text-emerald-400' : 'text-rose-500';
+    const pnlSign = s.pnlINR >= 0 ? '+' : '';
+    const dateStr = s.date ? new Date(s.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-';
+    return `<tr class="hover:bg-gray-800/50">
+      <td class="py-2 px-2 text-gray-300">${dateStr}</td>
+      <td class="py-2 px-2 font-medium">${s.ticker}</td>
+      <td class="py-2 px-2 text-right">${s.quantity?.toFixed(3) ?? '-'}</td>
+      <td class="py-2 px-2 text-right">${formatCurrency(s.sellPrice, s.currency)}</td>
+      <td class="py-2 px-2 text-right text-gray-400">${formatCurrency(s.avgCost, s.currency)}</td>
+      <td class="py-2 px-2 text-right ${pnlClass} font-medium">${pnlSign}${formatINR(s.pnlINR)}</td>
+    </tr>`;
+  }).join('');
 }
 
 function renderPnl(el, value) {
@@ -754,13 +833,19 @@ let transactionsSortCol = 'date';
 let transactionsSortAsc = false;
 let cachedTransactions = [];
 
+let breakdownSortCol = 'date';
+let breakdownSortAsc = false;
+
 function updateSortIndicators(prefix, activeCol) {
   const cols = prefix === 'h'
     ? ['ticker', 'name', 'shares', 'avgPrice', 'current', 'chandelier', 'return']
-    : ['date', 'ticker', 'type', 'quantity', 'price', 'total'];
+    : prefix === 't'
+    ? ['date', 'ticker', 'type', 'quantity', 'price', 'total']
+    : ['date', 'ticker', 'quantity', 'sellPrice', 'avgCost', 'pnlINR'];
+  const asc = prefix === 'h' ? holdingsSortAsc : prefix === 't' ? transactionsSortAsc : breakdownSortAsc;
   cols.forEach(col => {
     const el = document.getElementById(`sort-${prefix}-${col}`);
-    if (el) el.textContent = col === activeCol ? (prefix === 'h' ? (holdingsSortAsc ? '▲' : '▼') : (transactionsSortAsc ? '▲' : '▼')) : '';
+    if (el) el.textContent = col === activeCol ? (asc ? '▲' : '▼') : '';
   });
 }
 
@@ -831,6 +916,17 @@ function rerenderTransactions() {
     return 0;
   });
   transactionsBody.innerHTML = sorted.map(r => r.html).join('');
+}
+
+function sortBreakdown(col) {
+  if (breakdownSortCol === col) {
+    breakdownSortAsc = !breakdownSortAsc;
+  } else {
+    breakdownSortCol = col;
+    breakdownSortAsc = col === 'date' ? false : col === 'pnlINR' ? false : true;
+  }
+  updateSortIndicators('b', col);
+  updateRealizedCards();
 }
 
 // --- CSV Export ---
