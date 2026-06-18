@@ -582,14 +582,6 @@ async function renderHoldings(transactions) {
       ? (ceState === 'BULLISH' ? 'text-emerald-400' : 'text-rose-500')
       : 'text-gray-400';
 
-    // OTT indicator
-    const ottInfo = fund?.algo_ott;
-    const ottState = ottInfo?.marketState || null;
-    const ottText = ottState ? (ottState === 'BULLISH' ? 'BUY' : 'SELL') : 'N/A';
-    const ottClass = ottState
-      ? (ottState === 'BULLISH' ? 'text-emerald-400' : 'text-rose-500')
-      : 'text-gray-400';
-
     // Signal change badge
     const changes = (window._signalChanges || []).filter(c => c.ticker === h.ticker);
     const changeBadge = changes.length > 0
@@ -599,6 +591,15 @@ async function renderHoldings(transactions) {
     // Fundamentals & Moving Averages
     const fund = fundamentalsData[h.ticker];
     const ma = maData[h.ticker] || {};
+
+    // OTT indicator
+    const ottInfo = fund?.algo_ott;
+    const ottState = ottInfo?.marketState || null;
+    const ottText = ottState ? (ottState === 'BULLISH' ? 'BUY' : 'SELL') : 'N/A';
+    const ottClass = ottState
+      ? (ottState === 'BULLISH' ? 'text-emerald-400' : 'text-rose-500')
+      : 'text-gray-400';
+
     const weekHigh = fund?.fifty_two_week_high;
     const weekLow = fund?.fifty_two_week_low;
     const ma20 = ma.MA20;
