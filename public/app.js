@@ -582,10 +582,15 @@ async function renderHoldings(transactions) {
       ? (ceState === 'BULLISH' ? 'text-emerald-400' : 'text-rose-500')
       : 'text-gray-400';
 
-    // Signal change badge
-    const changes = (window._signalChanges || []).filter(c => c.ticker === h.ticker);
-    const changeBadge = changes.length > 0
-      ? ` <span class="ml-1 px-1 py-0.5 text-[9px] font-bold rounded ${changes[0].new_value === 'BULLISH' ? 'bg-emerald-600/30 text-emerald-300' : 'bg-rose-600/30 text-rose-300'}" title="${changes[0].old_value} → ${changes[0].new_value} (${new Date(changes[0].changed_at).toLocaleDateString()})">⚡</span>`
+    // Signal change badges — per indicator
+    const allChanges = (window._signalChanges || []).filter(c => c.ticker === h.ticker);
+    const ceChange = allChanges.find(c => c.indicator === 'chandelier_exit');
+    const ottChange = allChanges.find(c => c.indicator === 'ott');
+    const ceBadge = ceChange
+      ? ` <span class="ml-1 px-1 py-0.5 text-[9px] font-bold rounded ${ceChange.new_value === 'BULLISH' ? 'bg-emerald-600/30 text-emerald-300' : 'bg-rose-600/30 text-rose-300'}" title="CE: ${ceChange.old_value} → ${ceChange.new_value} (${new Date(ceChange.changed_at).toLocaleDateString()})">⚡</span>`
+      : '';
+    const ottBadge = ottChange
+      ? ` <span class="ml-1 px-1 py-0.5 text-[9px] font-bold rounded ${ottChange.new_value === 'BULLISH' ? 'bg-emerald-600/30 text-emerald-300' : 'bg-rose-600/30 text-rose-300'}" title="OTT: ${ottChange.old_value} → ${ottChange.new_value} (${new Date(ottChange.changed_at).toLocaleDateString()})">⚡</span>`
       : '';
 
     // Fundamentals & Moving Averages
@@ -629,7 +634,7 @@ async function renderHoldings(transactions) {
 
     const html = `
       <tr class="hover:bg-gray-800/50">
-        <td class="py-3 px-2 font-medium"><a href="https://in.tradingview.com/symbols/${h.ticker.replace(/\.(NS|BO|BSE)$/i, '')}" target="_blank" class="text-blue-400 hover:text-blue-300 hover:underline">${h.ticker}</a>${changeBadge}</td>
+        <td class="py-3 px-2 font-medium"><a href="https://in.tradingview.com/symbols/${h.ticker.replace(/\.(NS|BO|BSE)$/i, '')}" target="_blank" class="text-blue-400 hover:text-blue-300 hover:underline">${h.ticker}</a></td>
         <td class="py-3 px-2 text-right">${h.totalShares.toFixed(3)}</td>
         <td class="py-3 px-2 text-right">${formatCurrency(avgPrice, cur)}</td>
         <td class="py-3 px-2 text-right">${priceText}</td>
@@ -638,8 +643,8 @@ async function renderHoldings(transactions) {
         <td class="py-3 px-2 text-right text-gray-300">${weekHighText}</td>
         <td class="py-3 px-2 text-right text-gray-300">${weekLowText}</td>
         <td class="py-3 px-2 text-right ${belowHighClass} font-medium">${belowHighText}</td>
-        <td class="py-3 px-2 text-right ${ceClass} font-medium">${ceText}</td>
-        <td class="py-3 px-2 text-right ${ottClass} font-medium">${ottText}</td>
+        <td class="py-3 px-2 text-right ${ceClass} font-medium">${ceText}${ceBadge}</td>
+        <td class="py-3 px-2 text-right ${ottClass} font-medium">${ottText}${ottBadge}</td>
         <td class="py-3 px-2 text-right ${returnClass} font-medium">${returnText}</td>
         <td class="py-3 px-2 text-center space-x-1">
           <button onclick="prefillTransaction('${h.ticker}', '${h.name.replace(/'/g, "\\'") }', 'BUY', ${currentPrice || 0}, '${currentCur}')" class="text-[10px] bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 px-1.5 py-0.5 rounded transition-colors font-bold">B</button>
@@ -666,9 +671,9 @@ async function renderHoldings(transactions) {
     };
   });
 
-  if (holdingsSortCol) {
+  if (holdingsSortCol || document.getElementById('toggle-alerts-sort')?.checked) {
     rerenderHoldings();
-    updateSortIndicators('h', holdingsSortCol);
+    if (holdingsSortCol) updateSortIndicators('h', holdingsSortCol);
   } else {
     holdingsBody.innerHTML = cachedHoldingsRows.map(r => r.html).join('');
   }
@@ -772,6 +777,21 @@ function sortHoldings(col) {
 
 function rerenderHoldings() {
   if (cachedHoldingsRows.length === 0) return;
+
+  // Sort by alerts: CE changes first, then OTT changes, then column sort
+  const alertsSort = document.getElementById('toggle-alerts-sort')?.checked;
+  if (alertsSort) {
+    const sc = window._signalChanges || [];
+    const alertRank = (r) => {
+      const hasCE  = sc.some(c => c.ticker === r.ticker && c.indicator === 'chandelier_exit') ? 0 : 2;
+      const hasOTT = sc.some(c => c.ticker === r.ticker && c.indicator === 'ott') ? 0 : 1;
+      return hasCE + hasOTT; // 0=CE+OTT, 1=CE only, 2=OTT only, 3=none
+    };
+    const sorted = [...cachedHoldingsRows].sort((a, b) => alertRank(a) - alertRank(b));
+    holdingsBody.innerHTML = sorted.map(r => r.html).join('');
+    return;
+  }
+
   const sorted = [...cachedHoldingsRows].sort((a, b) => {
     let va = a[holdingsSortCol];
     let vb = b[holdingsSortCol];

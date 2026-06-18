@@ -135,15 +135,19 @@
             <h2 class="text-lg font-semibold">Current Holdings</h2>
             <div class="flex items-center gap-4">
               <label class="flex items-center gap-2 text-xs text-gray-400 cursor-pointer select-none">
+                <input type="checkbox" id="toggle-alerts-sort" class="accent-amber-400 w-3.5 h-3.5" onchange="rerenderHoldings()">
+                Sort by alerts
+              </label>
+              <label class="flex items-center gap-2 text-xs text-gray-400 cursor-pointer select-none">
                 <input type="checkbox" id="toggle-sold" class="accent-emerald-500 w-3.5 h-3.5" onchange="loadDashboard()">
                 Show sold
               </label>
               <button onclick="exportHoldingsCSV()" class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">Export CSV</button>
             </div>
           </div>
-          <div class="overflow-x-auto">
+          <div class="overflow-x-auto max-h-[82vh] overflow-y-auto">
             <table class="w-full text-sm whitespace-nowrap">
-              <thead>
+              <thead class="sticky top-0 z-10 bg-gray-900">
                 <tr class="text-gray-400 border-b border-gray-700">
                   <th class="text-left py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortHoldings('ticker')">Ticker <span id="sort-h-ticker"></span></th>
                   <th class="text-right py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortHoldings('shares')">Shares <span id="sort-h-shares"></span></th>
@@ -181,9 +185,9 @@
             <h2 class="text-lg font-semibold">Transaction Log</h2>
             <button onclick="exportTransactionsCSV()" class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">Export CSV</button>
           </div>
-          <div class="overflow-x-auto">
+          <div class="overflow-x-auto max-h-[60vh] overflow-y-auto">
             <table class="w-full text-sm">
-              <thead>
+              <thead class="sticky top-0 z-10 bg-gray-900">
                 <tr class="text-gray-400 border-b border-gray-700">
                   <th class="text-left py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortTransactions('date')">Date & Time <span id="sort-t-date"></span></th>
                   <th class="text-left py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortTransactions('ticker')">Ticker <span id="sort-t-ticker"></span></th>
