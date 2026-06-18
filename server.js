@@ -31,10 +31,27 @@ function supabaseFetch(path, options = {}) {
   });
 }
 
+// GET /api/users - List all users
+app.get('/api/users', async (req, res) => {
+  try {
+    const response = await supabaseFetch('users?order=name.asc&select=id,name');
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({ error: errText });
+    }
+    const users = await response.json();
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
 // GET /api/transactions - Read all transactions
 app.get('/api/transactions', async (req, res) => {
   try {
-    const response = await supabaseFetch('transactions?order=created_at.desc');
+    const { user_id } = req.query;
+    const filter = user_id ? `user_id=eq.${encodeURIComponent(user_id)}&` : '';
+    const response = await supabaseFetch(`transactions?${filter}order=created_at.desc`);
     if (!response.ok) {
       const errText = await response.text();
       return res.status(response.status).json({ error: errText });
@@ -49,7 +66,7 @@ app.get('/api/transactions', async (req, res) => {
 // POST /api/transactions - Add a new transaction
 app.post('/api/transactions', async (req, res) => {
   try {
-    const { ticker, name, type, date, quantity, price, currency } = req.body;
+    const { ticker, name, type, date, quantity, price, currency, user_id } = req.body;
 
     if (!ticker || !type || !date || quantity == null || price == null) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -66,7 +83,8 @@ app.post('/api/transactions', async (req, res) => {
 
     // For SELL transactions, validate user isn't selling more than they own
     if (type === 'SELL') {
-      const holdingsRes = await supabaseFetch(`transactions?ticker=eq.${encodeURIComponent(ticker.toUpperCase())}&select=type,quantity`);
+      const userFilter = user_id ? `&user_id=eq.${encodeURIComponent(user_id)}` : '';
+      const holdingsRes = await supabaseFetch(`transactions?ticker=eq.${encodeURIComponent(ticker.toUpperCase())}${userFilter}&select=type,quantity`);
       if (holdingsRes.ok) {
         const txns = await holdingsRes.json();
         const held = txns.reduce((acc, t) => acc + (t.type === 'BUY' ? Number(t.quantity) : -Number(t.quantity)), 0);
@@ -84,7 +102,8 @@ app.post('/api/transactions', async (req, res) => {
       timestamp: Math.floor(new Date(date).getTime() / 1000),
       quantity: parseFloat(quantity),
       price: parseFloat(price),
-      currency: currency || 'INR'
+      currency: currency || 'INR',
+      ...(user_id ? { user_id } : {})
     };
 
     const response = await supabaseFetch('transactions', {

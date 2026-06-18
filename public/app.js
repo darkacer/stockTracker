@@ -2,6 +2,34 @@
 
 const API_BASE = '/api';
 
+// --- Current user state ---
+let currentUserId = localStorage.getItem('selectedUserId') || null;
+
+async function loadUsers() {
+  try {
+    const res = await fetch(`${API_BASE}/users`);
+    if (!res.ok) return;
+    const users = await res.json();
+    const sel = document.getElementById('user-switcher');
+    if (!sel) return;
+    sel.innerHTML = users.map(u =>
+      `<option value="${u.id}" ${u.id === currentUserId ? 'selected' : ''}>${u.name}</option>`
+    ).join('');
+    // Default to first user if none stored
+    if (!currentUserId && users.length > 0) {
+      currentUserId = users[0].id;
+      localStorage.setItem('selectedUserId', currentUserId);
+      sel.value = currentUserId;
+    }
+  } catch {}
+}
+
+function switchUser(userId) {
+  currentUserId = userId;
+  localStorage.setItem('selectedUserId', userId);
+  loadDashboard();
+}
+
 // --- API helpers ---
 async function apiStockLookup(ticker) {
   const res = await fetch(`${API_BASE}/stock-lookup/${encodeURIComponent(ticker)}`);
@@ -22,7 +50,8 @@ async function apiExchangeRate(currency) {
 }
 
 async function apiGetTransactions() {
-  const res = await fetch(`${API_BASE}/transactions`);
+  const params = currentUserId ? `?user_id=${encodeURIComponent(currentUserId)}` : '';
+  const res = await fetch(`${API_BASE}/transactions${params}`);
   const data = await res.json();
   return data.transactions || [];
 }
@@ -31,7 +60,7 @@ async function apiAddTransaction(payload) {
   const res = await fetch(`${API_BASE}/transactions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
+    body: JSON.stringify({ ...payload, user_id: currentUserId })
   });
   if (!res.ok) {
     const err = await res.json();
@@ -978,4 +1007,4 @@ function exportTransactionsCSV() {
 }
 
 // --- Initialize ---
-loadDashboard();
+loadUsers().then(() => loadDashboard());
