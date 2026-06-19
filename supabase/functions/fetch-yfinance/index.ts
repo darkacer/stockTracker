@@ -5,6 +5,26 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+// RSI(14) using Wilder's smoothing — same method as TradingView
+function computeRSI(closes: number[], period = 14): number | null {
+  if (closes.length < period + 1) return null;
+  let avgGain = 0, avgLoss = 0;
+  for (let i = 1; i <= period; i++) {
+    const change = closes[i] - closes[i - 1];
+    if (change > 0) avgGain += change;
+    else avgLoss += Math.abs(change);
+  }
+  avgGain /= period;
+  avgLoss /= period;
+  for (let i = period + 1; i < closes.length; i++) {
+    const change = closes[i] - closes[i - 1];
+    avgGain = (avgGain * (period - 1) + (change > 0 ? change : 0)) / period;
+    avgLoss = (avgLoss * (period - 1) + (change < 0 ? Math.abs(change) : 0)) / period;
+  }
+  if (avgLoss === 0) return 100;
+  return Math.round((100 - 100 / (1 + avgGain / avgLoss)) * 100) / 100;
+}
+
 Deno.serve(async (req) => {
   try {
     const results = [];
@@ -47,6 +67,12 @@ Deno.serve(async (req) => {
       const fiftyTwoWeekLow = meta.fiftyTwoWeekLow ?? null;
       const currentPrice = meta.regularMarketPrice ?? null;
 
+      // --- Compute RSI(14) from close prices (Wilder's smoothing = TradingView default) ---
+      const closes: number[] = timestamps
+        .map((_: number, i: number) => quote.close[i])
+        .filter((c: number) => c != null);
+      const rsi = computeRSI(closes);
+
       // --- Fetch PE ratio from quote summary ---
       let peRatio = null;
       try {
@@ -71,6 +97,7 @@ Deno.serve(async (req) => {
           fifty_two_week_low: fiftyTwoWeekLow,
           pe_ratio: peRatio,
           current_price: currentPrice,
+          rsi,
           fundamentals_updated_at: new Date().toISOString()
         })
         .eq('ticker', ticker);

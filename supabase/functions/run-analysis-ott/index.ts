@@ -100,30 +100,25 @@ Deno.serve(async (_req) => {
       // 5. Determine marketState from final dir
       const marketState = dir === 1 ? 'BULLISH' : 'BEARISH';
 
-      // 6. Detect crossover/crossunder of MAvg vs OTT[2] (2-bar delayed) for currentSignal
-      //    buySignalk  = crossover(MAvg, OTT[2])
-      //    sellSignalk = crossunder(MAvg, OTT[2])
+      // 6. currentSignal: continuous comparison of MAvg vs OTT[2] (matches TradingView display)
+      //    BUY  = MAvg currently above the 2-bar delayed OTT line
+      //    SELL = MAvg currently below it
       let currentSignal = 'HOLD';
-      if (total >= 4) {
+      if (total >= 3) {
         const i = total - 1;
-        const mavCurr     = MAvg[i];
-        const mavPrev     = MAvg[i - 1];
-        const ottLag      = OTT[i - 2];      // OTT[2] at current bar
-        const ottLagPrev  = OTT[i - 3];      // OTT[2] at previous bar
-        if (mavPrev <= ottLagPrev && mavCurr > ottLag) currentSignal = 'BUY';
-        if (mavPrev >= ottLagPrev && mavCurr < ottLag) currentSignal = 'SELL';
+        currentSignal = MAvg[i] > OTT[i - 2] ? 'BUY' : 'SELL';
       }
 
-      // 7. Detect state change and log to signal_changes
-      const oldState = stock.algo_ott?.marketState || null;
-      if (oldState && oldState !== marketState) {
+      // 7. Detect currentSignal change and log to signal_changes
+      const oldSignal = stock.algo_ott?.currentSignal || null;
+      if (oldSignal && oldSignal !== currentSignal && currentSignal !== 'HOLD') {
         await supabase.from('signal_changes').insert({
           ticker,
           indicator: 'ott',
-          old_value: oldState,
-          new_value: marketState,
+          old_value: oldSignal,
+          new_value: currentSignal,
         });
-        console.log(`[signal-change] OTT ${ticker}: ${oldState} → ${marketState}`);
+        console.log(`[signal-change] OTT ${ticker}: ${oldSignal} → ${currentSignal}`);
       }
 
       // 8. Write result back to stocks_list
@@ -140,7 +135,7 @@ Deno.serve(async (_req) => {
         })
         .eq('ticker', ticker);
 
-      executionSummary.push({ ticker, status: 'Analyzed', changed: oldState !== marketState });
+      executionSummary.push({ ticker, status: 'Analyzed', changed: oldSignal !== currentSignal });
     }
 
     return new Response(JSON.stringify({ success: true, processed: executionSummary }), {

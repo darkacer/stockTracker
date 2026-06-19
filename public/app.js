@@ -663,7 +663,7 @@ async function renderHoldings(transactions) {
       ? ` <span class="ml-1 px-1 py-0.5 text-[9px] font-bold rounded ${ceChange.new_value === 'BULLISH' ? 'bg-emerald-600/30 text-emerald-300' : 'bg-rose-600/30 text-rose-300'}" title="CE: ${ceChange.old_value} → ${ceChange.new_value} (${new Date(ceChange.changed_at).toLocaleDateString()})">⚡</span>`
       : '';
     const ottBadge = ottChange
-      ? ` <span class="ml-1 px-1 py-0.5 text-[9px] font-bold rounded ${ottChange.new_value === 'BULLISH' ? 'bg-emerald-600/30 text-emerald-300' : 'bg-rose-600/30 text-rose-300'}" title="OTT: ${ottChange.old_value} → ${ottChange.new_value} (${new Date(ottChange.changed_at).toLocaleDateString()})">⚡</span>`
+      ? ` <span class="ml-1 px-1 py-0.5 text-[9px] font-bold rounded ${ottChange.new_value === 'BUY' || ottChange.new_value === 'BULLISH' ? 'bg-emerald-600/30 text-emerald-300' : 'bg-rose-600/30 text-rose-300'}" title="OTT: ${ottChange.old_value} → ${ottChange.new_value} (${new Date(ottChange.changed_at).toLocaleDateString()})">⚡</span>`
       : '';
 
     // Fundamentals & Moving Averages
@@ -673,13 +673,13 @@ async function renderHoldings(transactions) {
     // OTT indicator
     const ottInfo = fund?.algo_ott;
     const ottState = ottInfo?.marketState || null;
-    const ottText = ottState ? (ottState === 'BULLISH' ? 'BUY' : 'SELL') : 'N/A';
-    const ottClass = ottState
-      ? (ottState === 'BULLISH' ? 'text-emerald-400' : 'text-rose-500')
-      : 'text-gray-400';
+    const ottSignal = ottInfo?.currentSignal || null;
+    const ottText = ottSignal ? (ottSignal === 'BUY' ? 'BUY' : 'SELL') : (ottState ? (ottState === 'BULLISH' ? 'BUY' : 'SELL') : 'N/A');
+    const ottClass = ottText === 'BUY' ? 'text-emerald-400' : ottText === 'SELL' ? 'text-rose-500' : 'text-gray-400';
 
     const weekHigh = fund?.fifty_two_week_high;
     const weekLow = fund?.fifty_two_week_low;
+    const rsi = fund?.rsi;
     const ma20 = ma.MA20;
     const ma44 = ma.MA44;
 
@@ -695,6 +695,13 @@ async function renderHoldings(transactions) {
     const ma44Class = ma44 != null && currentPrice != null
       ? (currentPrice >= ma44 ? 'text-emerald-400' : 'text-rose-500')
       : 'text-gray-400';
+
+    // RSI color coding
+    const rsiText = rsi != null ? rsi.toFixed(1) : 'N/A';
+    const rsiClass = rsi == null ? 'text-gray-400'
+      : rsi >= 70 ? 'text-rose-400'
+      : rsi <= 30 ? 'text-emerald-400'
+      : 'text-yellow-400';
 
     // % below 52W High
     const belowHigh = (weekHigh != null && currentPrice != null && weekHigh > 0)
@@ -716,6 +723,7 @@ async function renderHoldings(transactions) {
         <td class="py-3 px-2 text-right text-gray-300">${weekHighText}</td>
         <td class="py-3 px-2 text-right text-gray-300">${weekLowText}</td>
         <td class="py-3 px-2 text-right ${belowHighClass} font-medium">${belowHighText}</td>
+        <td class="py-3 px-2 text-right ${rsiClass} font-medium">${rsiText}</td>
         <td class="py-3 px-2 text-right ${ceClass} font-medium">${ceText}${ceBadge}</td>
         <td class="py-3 px-2 text-right ${ottClass} font-medium">${ottText}${ottBadge}</td>
         <td class="py-3 px-2 text-right ${returnClass} font-medium">${returnText}</td>
@@ -737,8 +745,9 @@ async function renderHoldings(transactions) {
       weekHigh: weekHigh || 0,
       weekLow: weekLow || 0,
       belowHigh: belowHigh || 0,
+      rsi: rsi ?? 0,
       chandelier: ceText || '',
-      ott: ottState === 'BULLISH' ? 1 : ottState === 'BEARISH' ? -1 : 0,
+      ott: ottText === 'BUY' ? 1 : ottText === 'SELL' ? -1 : 0,
       return: returnPct,
       html
     };

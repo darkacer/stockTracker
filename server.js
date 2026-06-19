@@ -413,7 +413,7 @@ app.post('/api/holdings-data', async (req, res) => {
     const tickerFilter = tickers.map(t => encodeURIComponent(t)).join(',');
     console.log('[holdings-data] tickers:', tickers, 'filter:', tickerFilter);
     const fundResponse = await supabaseFetch(
-      `stocks_list?ticker=in.(${tickerFilter})&select=ticker,fifty_two_week_high,fifty_two_week_low,pe_ratio,current_price,fundamentals_updated_at,algo_ott`
+      `stocks_list?ticker=in.(${tickerFilter})&select=ticker,fifty_two_week_high,fifty_two_week_low,pe_ratio,current_price,fundamentals_updated_at,algo_ott,rsi`
     );
 
     const fundamentals = {};
