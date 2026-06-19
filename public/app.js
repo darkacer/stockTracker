@@ -4,22 +4,47 @@ const API_BASE = '/api';
 
 // --- Current user state ---
 let currentUserId = localStorage.getItem('selectedUserId') || null;
+let cachedUsers = [];
+
+function getInitials(name) {
+  return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+}
+
+function setAvatarUser(user) {
+  const btn = document.getElementById('user-initials');
+  if (btn && user) btn.textContent = getInitials(user.name);
+}
+
+function toggleUserMenu() {
+  const menu = document.getElementById('user-menu');
+  if (menu) menu.classList.toggle('hidden');
+}
 
 async function loadUsers() {
   try {
     const res = await fetch(`${API_BASE}/users`);
     if (!res.ok) return;
-    const users = await res.json();
-    const sel = document.getElementById('user-switcher');
-    if (!sel) return;
-    sel.innerHTML = users.map(u =>
-      `<option value="${u.id}" ${u.id === currentUserId ? 'selected' : ''}>${u.name}</option>`
-    ).join('');
-    // Default to first user if none stored
-    if (!currentUserId && users.length > 0) {
-      currentUserId = users[0].id;
+    cachedUsers = await res.json();
+    if (!cachedUsers.length) return;
+
+    // Default to stored user or first user
+    if (!currentUserId || !cachedUsers.find(u => u.id === currentUserId)) {
+      currentUserId = cachedUsers[0].id;
       localStorage.setItem('selectedUserId', currentUserId);
-      sel.value = currentUserId;
+    }
+
+    // Render avatar for current user
+    setAvatarUser(cachedUsers.find(u => u.id === currentUserId));
+
+    // Render menu list
+    const list = document.getElementById('user-menu-list');
+    if (list) {
+      list.innerHTML = cachedUsers.map(u => `
+        <button onclick="switchUser('${u.id}')" class="w-full flex items-center gap-3 px-4 py-2 text-sm hover:bg-gray-700/50 transition-colors ${u.id === currentUserId ? 'text-emerald-400 font-semibold' : 'text-gray-200'}">
+          <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${u.id === currentUserId ? 'bg-emerald-600' : 'bg-gray-600'}">${getInitials(u.name)}</span>
+          ${u.name}
+        </button>
+      `).join('');
     }
   } catch {}
 }
@@ -27,6 +52,19 @@ async function loadUsers() {
 function switchUser(userId) {
   currentUserId = userId;
   localStorage.setItem('selectedUserId', userId);
+  const user = cachedUsers.find(u => u.id === userId);
+  setAvatarUser(user);
+  // Re-render menu to update active state
+  const list = document.getElementById('user-menu-list');
+  if (list) {
+    list.innerHTML = cachedUsers.map(u => `
+      <button onclick="switchUser('${u.id}')" class="w-full flex items-center gap-3 px-4 py-2 text-sm hover:bg-gray-700/50 transition-colors ${u.id === currentUserId ? 'text-emerald-400 font-semibold' : 'text-gray-200'}">
+        <span class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${u.id === currentUserId ? 'bg-emerald-600' : 'bg-gray-600'}">${getInitials(u.name)}</span>
+        ${u.name}
+      </button>
+    `).join('');
+  }
+  document.getElementById('user-menu')?.classList.add('hidden');
   loadDashboard();
 }
 
@@ -1006,5 +1044,140 @@ function exportTransactionsCSV() {
   showToast('Transactions exported successfully', 'success');
 }
 
+// --- CSV Bulk Import ---
+let csvImportRows = [];
+
+function parseCSV(text) {
+  const lines = text.trim().split('\n').filter(l => l.trim());
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/[^a-z_]/g, ''));
+  return lines.slice(1).map((line, i) => {
+    // Handle quoted fields
+    const cols = [];
+    let cur = '', inQuote = false;
+    for (const ch of line) {
+      if (ch === '"') { inQuote = !inQuote; }
+      else if (ch === ',' && !inQuote) { cols.push(cur.trim()); cur = ''; }
+      else cur += ch;
+    }
+    cols.push(cur.trim());
+    const row = {};
+    headers.forEach((h, idx) => { row[h] = cols[idx] !== undefined ? cols[idx].replace(/^"|"$/g, '').trim() : ''; });
+    return { _row: i + 2, ...row };
+  });
+}
+
+function validateImportRow(row) {
+  const errors = [];
+  if (!row.ticker) errors.push('missing ticker');
+  if (!row.date) errors.push('missing date');
+  if (!row.type || !['BUY', 'SELL'].includes(row.type.toUpperCase())) errors.push('type must be BUY or SELL');
+  if (!row.quantity || isNaN(parseFloat(row.quantity)) || parseFloat(row.quantity) <= 0) errors.push('invalid quantity');
+  if (!row.price || isNaN(parseFloat(row.price)) || parseFloat(row.price) < 0) errors.push('invalid price');
+  return errors;
+}
+
+function handleCSVImport(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  event.target.value = ''; // reset so same file can be re-imported
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    csvImportRows = parseCSV(e.target.result);
+    if (csvImportRows.length === 0) {
+      showToast('CSV is empty or invalid', 'error');
+      return;
+    }
+    renderImportPreview();
+    document.getElementById('csv-import-modal').classList.remove('hidden');
+  };
+  reader.readAsText(file);
+}
+
+function renderImportPreview() {
+  const tbody = document.getElementById('csv-preview-body');
+  const summary = document.getElementById('csv-import-summary');
+  let valid = 0, invalid = 0;
+
+  tbody.innerHTML = csvImportRows.map((row, i) => {
+    const errors = validateImportRow(row);
+    const isValid = errors.length === 0;
+    if (isValid) valid++; else invalid++;
+    const statusHtml = isValid
+      ? `<span class="text-emerald-400 text-xs">✓ OK</span>`
+      : `<span class="text-rose-400 text-xs" title="${errors.join(', ')}">✗ ${errors[0]}</span>`;
+    const rowClass = isValid ? '' : 'opacity-50';
+    return `<tr class="hover:bg-gray-800/30 ${rowClass}">
+      <td class="py-1.5 px-2 text-gray-500">${row._row}</td>
+      <td class="py-1.5 px-2">${row.date || '-'}</td>
+      <td class="py-1.5 px-2 font-medium">${(row.ticker || '').toUpperCase()}</td>
+      <td class="py-1.5 px-2 text-gray-400">${row.name || '-'}</td>
+      <td class="py-1.5 px-2 ${row.type?.toUpperCase() === 'BUY' ? 'text-emerald-400' : 'text-rose-400'}">${(row.type || '').toUpperCase()}</td>
+      <td class="py-1.5 px-2 text-right">${row.quantity || '-'}</td>
+      <td class="py-1.5 px-2 text-right">${row.price || '-'}</td>
+      <td class="py-1.5 px-2">${row.currency || 'INR'}</td>
+      <td class="py-1.5 px-2">${statusHtml}</td>
+    </tr>`;
+  }).join('');
+
+  summary.textContent = `${valid} valid, ${invalid} invalid (invalid rows will be skipped)`;
+  document.getElementById('csv-confirm-btn').disabled = valid === 0;
+}
+
+function closeImportModal() {
+  document.getElementById('csv-import-modal').classList.add('hidden');
+  csvImportRows = [];
+}
+
+async function confirmCSVImport() {
+  const btn = document.getElementById('csv-confirm-btn');
+  const validRows = csvImportRows.filter(row => validateImportRow(row).length === 0);
+  if (validRows.length === 0) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Importing...';
+
+  let success = 0, failed = 0;
+  for (const row of validRows) {
+    try {
+      await apiAddTransaction({
+        ticker: row.ticker.toUpperCase(),
+        name: row.name || row.ticker.toUpperCase(),
+        type: row.type.toUpperCase(),
+        date: row.date,
+        quantity: parseFloat(row.quantity),
+        price: parseFloat(row.price),
+        currency: row.currency || 'INR'
+      });
+      success++;
+    } catch {
+      failed++;
+    }
+  }
+
+  closeImportModal();
+  showToast(`Imported ${success} transaction${success !== 1 ? 's' : ''}${failed ? `, ${failed} failed` : ''}`, failed ? 'error' : 'success');
+  await loadDashboard();
+}
+
 // --- Initialize ---
+async function loadAnalysisTimestamps() {
+  try {
+    const res = await fetch(`${API_BASE}/analysis-timestamps`);
+    if (!res.ok) return;
+    const { ce, ott } = await res.json();
+    const fmt = (iso) => {
+      if (!iso) return '–';
+      const d = new Date(iso);
+      return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) +
+        ' ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+    };
+    const ceEl = document.getElementById('ce-last-run');
+    const ottEl = document.getElementById('ott-last-run');
+    if (ceEl) ceEl.textContent = fmt(ce);
+    if (ottEl) ottEl.textContent = fmt(ott);
+  } catch {}
+}
+
+loadAnalysisTimestamps();
 loadUsers().then(() => loadDashboard());

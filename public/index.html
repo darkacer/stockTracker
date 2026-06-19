@@ -35,11 +35,19 @@
     <h1 class="text-2xl font-bold tracking-tight">
       <span class="text-emerald-400">◈</span> Stock Tracker
     </h1>
-    <div class="ml-auto flex items-center gap-2">
-      <span class="text-xs text-gray-500 uppercase tracking-wide">Viewing:</span>
-      <select id="user-switcher" onchange="switchUser(this.value)" class="bg-[#1f2937] border border-gray-700 text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 cursor-pointer min-w-[140px]">
-        <option value="">Loading...</option>
-      </select>
+    <div class="ml-6 hidden md:flex items-center gap-4 text-[11px] text-gray-500">
+      <span>CE: <span id="ce-last-run" class="text-gray-400">–</span></span>
+      <span>OTT: <span id="ott-last-run" class="text-gray-400">–</span></span>
+    </div>
+    <div class="ml-auto flex items-center gap-2 relative">
+      <button id="user-avatar-btn" onclick="toggleUserMenu()" class="w-9 h-9 rounded-full bg-emerald-600 hover:bg-emerald-500 flex items-center justify-center text-sm font-bold text-white tracking-wide focus:outline-none focus:ring-2 focus:ring-emerald-400 transition-colors" title="Switch user">
+        <span id="user-initials">--</span>
+      </button>
+      <!-- User switcher popover -->
+      <div id="user-menu" class="hidden absolute right-0 top-11 z-50 bg-[#1f2937] border border-gray-700 rounded-xl shadow-xl min-w-[180px] py-2">
+        <p class="text-[10px] text-gray-500 uppercase tracking-wide px-4 pb-1">Switch user</p>
+        <div id="user-menu-list"></div>
+      </div>
     </div>
   </header>
 
@@ -213,7 +221,11 @@
         <div class="bg-[#1f2937] rounded-xl p-6 border border-gray-700/50">
           <div class="flex justify-between items-center mb-4">
             <h2 class="text-lg font-semibold">Transaction Log</h2>
-            <button onclick="exportTransactionsCSV()" class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">Export CSV</button>
+            <div class="flex items-center gap-2">
+              <button onclick="document.getElementById('csv-import-input').click()" class="text-xs bg-blue-700 hover:bg-blue-600 text-white px-3 py-1.5 rounded-lg transition-colors">Import CSV</button>
+              <input type="file" id="csv-import-input" accept=".csv" class="hidden" onchange="handleCSVImport(event)" />
+              <button onclick="exportTransactionsCSV()" class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">Export CSV</button>
+            </div>
           </div>
           <div class="overflow-x-auto max-h-[60vh] overflow-y-auto">
             <table class="w-full text-sm">
@@ -263,9 +275,56 @@
     </section>
   </main>
 
+  <!-- CSV Import Modal -->
+  <div id="csv-import-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+    <div class="bg-[#1f2937] border border-gray-700 rounded-2xl w-full max-w-2xl mx-4 shadow-2xl flex flex-col max-h-[80vh]">
+      <div class="flex justify-between items-center px-6 py-4 border-b border-gray-700">
+        <div>
+          <h3 class="text-lg font-semibold">Import Transactions</h3>
+          <p class="text-xs text-gray-400 mt-0.5">CSV columns: <span class="text-gray-300 font-mono">date, ticker, name, type, quantity, price, currency</span></p>
+        </div>
+        <button onclick="closeImportModal()" class="text-gray-400 hover:text-white text-2xl leading-none">&times;</button>
+      </div>
+      <div class="overflow-auto flex-1 px-6 py-4">
+        <table class="w-full text-sm whitespace-nowrap">
+          <thead>
+            <tr class="text-gray-400 border-b border-gray-700 text-left">
+              <th class="py-2 px-2">#</th>
+              <th class="py-2 px-2">Date</th>
+              <th class="py-2 px-2">Ticker</th>
+              <th class="py-2 px-2">Name</th>
+              <th class="py-2 px-2">Type</th>
+              <th class="py-2 px-2 text-right">Qty</th>
+              <th class="py-2 px-2 text-right">Price</th>
+              <th class="py-2 px-2">Currency</th>
+              <th class="py-2 px-2">Status</th>
+            </tr>
+          </thead>
+          <tbody id="csv-preview-body" class="divide-y divide-gray-700/50"></tbody>
+        </table>
+      </div>
+      <div class="px-6 py-4 border-t border-gray-700 flex items-center justify-between gap-4">
+        <p id="csv-import-summary" class="text-sm text-gray-400"></p>
+        <div class="flex gap-2">
+          <button onclick="closeImportModal()" class="text-sm px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-gray-300 transition-colors">Cancel</button>
+          <button id="csv-confirm-btn" onclick="confirmCSVImport()" class="text-sm px-4 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg text-white font-semibold transition-colors">Import All</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Container -->
   <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2"></div>
 
   <script src="app.js"></script>
+  <script>
+    document.addEventListener('click', (e) => {
+      const btn = document.getElementById('user-avatar-btn');
+      const menu = document.getElementById('user-menu');
+      if (menu && btn && !btn.contains(e.target) && !menu.contains(e.target)) {
+        menu.classList.add('hidden');
+      }
+    });
+  </script>
 </body>
 </html>
