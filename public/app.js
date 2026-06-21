@@ -696,7 +696,16 @@ async function renderHoldings(transactions) {
       ? (currentPrice >= ma44 ? 'text-emerald-400' : 'text-rose-500')
       : 'text-gray-400';
 
-    // RSI color coding
+    // Color current price based on MA + CE + OTT conditions
+    const priceClass = (() => {
+      if (currentPrice == null || ma20 == null || ma44 == null) return 'text-white';
+      const isBelowBothMA = currentPrice < ma20 && currentPrice < ma44;
+      const isAboveBothMA = currentPrice >= ma20 && currentPrice >= ma44;
+      if (isBelowBothMA && ceText === 'SELL' && ottText === 'SELL') return 'text-rose-500';
+      if (isAboveBothMA && ceText === 'BUY' && ottText === 'BUY') return 'text-emerald-400';
+      return 'text-white';
+    })();
+
     const rsiText = rsi != null ? rsi.toFixed(1) : 'N/A';
     const rsiClass = rsi == null ? 'text-gray-400'
       : rsi >= 70 ? 'text-rose-400'
@@ -717,7 +726,7 @@ async function renderHoldings(transactions) {
         <td class="py-3 px-2 font-medium"><a href="https://in.tradingview.com/symbols/${h.ticker.replace(/\.(NS|BO|BSE)$/i, '')}" target="_blank" class="text-blue-400 hover:text-blue-300 hover:underline">${h.ticker}</a></td>
         <td class="py-3 px-2 text-right">${h.totalShares.toFixed(3)}</td>
         <td class="py-3 px-2 text-right">${formatCurrency(avgPrice, cur)}</td>
-        <td class="py-3 px-2 text-right">${priceText}</td>
+        <td class="py-3 px-2 text-right ${priceClass} font-medium">${priceText}</td>
         <td class="py-3 px-2 text-right ${ma20Class}">${ma20Text}</td>
         <td class="py-3 px-2 text-right ${ma44Class}">${ma44Text}</td>
         <td class="py-3 px-2 text-right text-gray-300">${weekHighText}</td>
