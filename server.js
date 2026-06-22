@@ -137,6 +137,15 @@ app.post('/api/transactions', async (req, res) => {
 
     const [created] = await response.json();
     res.status(201).json(created);
+
+    // Auto-add ticker to stocks_list (fire-and-forget, upsert is safe)
+    if (type === 'BUY') {
+      supabaseFetch('stocks_list', {
+        method: 'POST',
+        prefer: 'return=minimal, resolution=merge-duplicates',
+        body: JSON.stringify({ ticker: ticker.toUpperCase() })
+      }).catch(() => {});
+    }
   } catch (err) {
     res.status(500).json({ error: 'Failed to save transaction' });
   }
