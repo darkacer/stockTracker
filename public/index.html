@@ -6,15 +6,17 @@
   <title>Stock Tracker</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            slate: {
-              900: '#121214',
-              800: '#1f2937',
-              700: '#2d3748'
+    if (typeof tailwind !== 'undefined') {
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              slate: {
+                900: '#121214',
+                800: '#1f2937',
+                700: '#2d3748'
+              }
             }
           }
         }
@@ -40,6 +42,9 @@
       <span>OTT: <span id="ott-last-run" class="text-gray-400">–</span></span>
     </div>
     <div class="ml-auto flex items-center gap-2 relative">
+      <a href="https://chartink.com/screener/pure-bullish-trend-stocks" target="_blank" class="px-3 py-1.5 rounded-md bg-purple-600 hover:bg-purple-500 text-xs font-bold text-white focus:outline-none focus:ring-2 focus:ring-purple-400 transition-colors" title="Chartink Screener">
+        Pure Bullish Stocks
+      </a>
       <button id="user-avatar-btn" onclick="toggleUserMenu()" class="w-9 h-9 rounded-full bg-emerald-600 hover:bg-emerald-500 flex items-center justify-center text-sm font-bold text-white tracking-wide focus:outline-none focus:ring-2 focus:ring-emerald-400 transition-colors" title="Switch user">
         <span id="user-initials">--</span>
       </button>
@@ -99,6 +104,30 @@
           <label for="input-price" class="block text-sm text-gray-400 mb-1">Price per Share</label>
           <input type="number" id="input-price" step="0.01" min="0" placeholder="175.50"
             class="w-full bg-[#121214] border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50" />
+        </div>
+
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">Target (optional)</label>
+          <div class="flex gap-2">
+            <input type="number" id="input-target" step="0.01" min="0" placeholder="0"
+              class="flex-1 bg-[#121214] border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50" />
+            <select id="input-target-type" class="bg-[#121214] border border-gray-700 rounded-lg px-2 py-2.5 text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/50">
+              <option value="percentage">%</option>
+              <option value="amount">₹</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm text-gray-400 mb-1">Stop Loss (optional)</label>
+          <div class="flex gap-2">
+            <input type="number" id="input-stoploss" step="0.01" min="0" placeholder="0"
+              class="flex-1 bg-[#121214] border border-gray-700 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50" />
+            <select id="input-stoploss-type" class="bg-[#121214] border border-gray-700 rounded-lg px-2 py-2.5 text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500/50">
+              <option value="percentage">%</option>
+              <option value="amount">₹</option>
+            </select>
+          </div>
         </div>
 
         <button type="submit"
@@ -201,6 +230,7 @@
                   <th class="text-right py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortHoldings('ott')">OTT <span id="sort-h-ott"></span></th>
                   <th class="text-right py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortHoldings('return')">Return <span id="sort-h-return"></span></th>
                   <th class="text-center py-3 px-2">Actions</th>
+                  <th class="text-center py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortHoldings('tsl')">T/SL <span id="sort-h-tsl"></span></th>
                 </tr>
               </thead>
               <tbody id="holdings-body" class="divide-y divide-gray-700/50">
@@ -223,6 +253,9 @@
           <div class="flex justify-between items-center mb-4">
             <h2 class="text-lg font-semibold">Transaction Log</h2>
             <div class="flex items-center gap-2">
+              <button id="btn-edit-transactions" onclick="toggleEditTransactions()" class="text-xs bg-amber-700 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg transition-colors">Edit</button>
+              <button id="btn-save-transactions" onclick="saveEditedTransactions()" class="text-xs bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg transition-colors hidden">Save All</button>
+              <button id="btn-cancel-edit" onclick="cancelEditTransactions()" class="text-xs bg-gray-600 hover:bg-gray-500 text-white px-3 py-1.5 rounded-lg transition-colors hidden">Cancel</button>
               <button onclick="document.getElementById('csv-import-input').click()" class="text-xs bg-blue-700 hover:bg-blue-600 text-white px-3 py-1.5 rounded-lg transition-colors">Import CSV</button>
               <input type="file" id="csv-import-input" accept=".csv" class="hidden" onchange="handleCSVImport(event)" />
               <button onclick="exportTransactionsCSV()" class="text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-1.5 rounded-lg transition-colors">Export CSV</button>
@@ -238,6 +271,8 @@
                   <th class="text-right py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortTransactions('quantity')">Qty <span id="sort-t-quantity"></span></th>
                   <th class="text-right py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortTransactions('price')">Price <span id="sort-t-price"></span></th>
                   <th class="text-right py-3 px-2 cursor-pointer hover:text-white select-none" onclick="sortTransactions('total')">Total <span id="sort-t-total"></span></th>
+                  <th class="text-right py-3 px-2">Target</th>
+                  <th class="text-right py-3 px-2">Stop Loss</th>
                   <th class="text-center py-3 px-2"></th>
                 </tr>
               </thead>

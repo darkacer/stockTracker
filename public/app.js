@@ -375,6 +375,17 @@ form.addEventListener('submit', async (e) => {
     currency: currentLookupCurrency
   };
 
+  const targetVal = document.getElementById('input-target').value;
+  const stoplossVal = document.getElementById('input-stoploss').value;
+  if (targetVal) {
+    payload.target_value = parseFloat(targetVal);
+    payload.target_type = document.getElementById('input-target-type').value;
+  }
+  if (stoplossVal) {
+    payload.stoploss_value = parseFloat(stoplossVal);
+    payload.stoploss_type = document.getElementById('input-stoploss-type').value;
+  }
+
   if (!payload.ticker || !payload.date || payload.quantity == null || isNaN(payload.quantity) || payload.price == null || isNaN(payload.price)) {
     showError('Please fill in all required fields.');
     return;
@@ -441,6 +452,158 @@ async function deleteTransaction(id) {
   }
 }
 
+// --- Edit Transactions Mode ---
+let isEditMode = false;
+
+function toggleEditTransactions() {
+  isEditMode = true;
+  document.getElementById('btn-edit-transactions').classList.add('hidden');
+  document.getElementById('btn-save-transactions').classList.remove('hidden');
+  document.getElementById('btn-cancel-edit').classList.remove('hidden');
+  renderEditableTransactions();
+}
+
+function cancelEditTransactions() {
+  isEditMode = false;
+  document.getElementById('btn-edit-transactions').classList.remove('hidden');
+  document.getElementById('btn-save-transactions').classList.add('hidden');
+  document.getElementById('btn-cancel-edit').classList.add('hidden');
+  rerenderTransactions();
+}
+
+function renderEditableTransactions() {
+  const inputClass = 'bg-[#121214] border border-gray-700 rounded px-1.5 py-1 text-white text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500/50';
+  const selectClass = 'bg-[#121214] border border-gray-700 rounded px-1 py-1 text-white text-xs focus:outline-none';
+
+  const sorted = [...cachedTransactions].sort((a, b) => {
+    let va = a[transactionsSortCol]; let vb = b[transactionsSortCol];
+    if (typeof va === 'string') { va = va.toLowerCase(); vb = vb.toLowerCase(); }
+    if (va < vb) return transactionsSortAsc ? -1 : 1;
+    if (va > vb) return transactionsSortAsc ? 1 : -1;
+    return 0;
+  });
+
+  transactionsBody.innerHTML = sorted.map(t => {
+    const dateVal = t.date && t.date.includes('T') ? t.date.slice(0, 16) : t.date;
+    return `
+      <tr class="hover:bg-gray-800/50" data-id="${t.id}">
+        <td class="py-2 px-1"><input type="datetime-local" data-field="date" value="${dateVal}" class="${inputClass} w-[150px]" /></td>
+        <td class="py-2 px-1"><input type="text" data-field="ticker" value="${t.ticker}" class="${inputClass} w-[80px] uppercase" /></td>
+        <td class="py-2 px-1"><select data-field="type" class="${selectClass}"><option value="BUY" ${t.type === 'BUY' ? 'selected' : ''}>BUY</option><option value="SELL" ${t.type === 'SELL' ? 'selected' : ''}>SELL</option></select></td>
+        <td class="py-2 px-1"><input type="number" data-field="quantity" value="${t.quantity}" step="0.001" class="${inputClass} w-[70px] text-right" /></td>
+        <td class="py-2 px-1"><input type="number" data-field="price" value="${t.price}" step="0.01" class="${inputClass} w-[80px] text-right" /></td>
+        <td class="py-2 px-1 text-right text-gray-400 text-xs">${formatCurrency(t.quantity * t.price, t.currency)}</td>
+        <td class="py-2 px-1"><div class="flex gap-0.5"><input type="number" data-field="target_value" value="${t.target_value || ''}" step="0.01" placeholder="0" class="${inputClass} w-[55px] text-right" /><select data-field="target_type" class="${selectClass} w-[35px]"><option value="percentage" ${t.target_type === 'percentage' ? 'selected' : ''}>%</option><option value="amount" ${t.target_type === 'amount' ? 'selected' : ''}>₹</option></select></div></td>
+        <td class="py-2 px-1"><div class="flex gap-0.5"><input type="number" data-field="stoploss_value" value="${t.stoploss_value || ''}" step="0.01" placeholder="0" class="${inputClass} w-[55px] text-right" /><select data-field="stoploss_type" class="${selectClass} w-[35px]"><option value="percentage" ${t.stoploss_type === 'percentage' ? 'selected' : ''}>%</option><option value="amount" ${t.stoploss_type === 'amount' ? 'selected' : ''}>₹</option></select></div></td>
+        <td class="py-2 px-1 text-center space-x-1">
+          <button onclick="saveOneTransaction('${t.id}')" class="text-emerald-400 hover:text-emerald-300 transition-colors text-xs font-bold" title="Save this row">💾</button>
+          <button onclick="deleteTransaction('${t.id}')" class="text-gray-500 hover:text-rose-500 transition-colors" title="Delete">✕</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function saveOneTransaction(id) {
+  const row = transactionsBody.querySelector(`tr[data-id="${id}"]`);
+  if (!row) return;
+
+  const getValue = (field) => {
+    const el = row.querySelector(`[data-field="${field}"]`);
+    return el ? el.value : null;
+  };
+
+  const fields = {
+    date: getValue('date'),
+    ticker: getValue('ticker'),
+    type: getValue('type'),
+    quantity: getValue('quantity'),
+    price: getValue('price'),
+    target_value: getValue('target_value') || null,
+    target_type: getValue('target_type'),
+    stoploss_value: getValue('stoploss_value') || null,
+    stoploss_type: getValue('stoploss_type')
+  };
+
+  try {
+    const res = await fetch(`${API_BASE}/transactions/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fields)
+    });
+    if (res.ok) {
+      showToast('Transaction updated', 'success');
+      await loadDashboard();
+      if (isEditMode) renderEditableTransactions();
+    } else {
+      const err = await res.json();
+      showToast(err.error || 'Failed to update', 'error');
+    }
+  } catch {
+    showToast('Failed to update transaction', 'error');
+  }
+}
+
+async function saveEditedTransactions() {
+  const rows = transactionsBody.querySelectorAll('tr[data-id]');
+  const updates = [];
+
+  rows.forEach(row => {
+    const id = row.dataset.id;
+    if (!id) return;
+
+    const getValue = (field) => {
+      const el = row.querySelector(`[data-field="${field}"]`);
+      return el ? el.value : null;
+    };
+
+    const fields = {
+      date: getValue('date'),
+      ticker: getValue('ticker'),
+      type: getValue('type'),
+      quantity: getValue('quantity'),
+      price: getValue('price'),
+      target_value: getValue('target_value') || null,
+      target_type: getValue('target_type'),
+      stoploss_value: getValue('stoploss_value') || null,
+      stoploss_type: getValue('stoploss_type')
+    };
+
+    updates.push({ id, ...fields });
+  });
+
+  if (updates.length === 0) {
+    showToast('No transactions to save', 'info');
+    return;
+  }
+
+  try {
+    let successCount = 0;
+    for (const update of updates) {
+      const { id, ...fields } = update;
+      const res = await fetch(`${API_BASE}/transactions/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(fields)
+      });
+      if (res.ok) {
+        successCount++;
+      } else {
+        const err = await res.text();
+        console.error(`[saveAll] Failed to update ${id}:`, err);
+      }
+    }
+    showToast(`${successCount} transaction(s) updated`, 'success');
+    isEditMode = false;
+    document.getElementById('btn-edit-transactions').classList.remove('hidden');
+    document.getElementById('btn-save-transactions').classList.add('hidden');
+    document.getElementById('btn-cancel-edit').classList.add('hidden');
+    await loadDashboard();
+  } catch (err) {
+    showToast('Failed to save some transactions', 'error');
+  }
+}
+
 // --- Dashboard Data Loading ---
 async function loadDashboard() {
   try {
@@ -470,14 +633,24 @@ function renderTransactionLog(transactions) {
     const displayDate = t.date && t.date.includes('T')
       ? t.date.replace('T', ' ').slice(0, 16)
       : t.date;
+
+    const targetDisplay = t.target_value != null && t.target_value > 0
+      ? `${t.target_value}${t.target_type === 'percentage' ? '%' : ' ₹'}`
+      : '–';
+    const slDisplay = t.stoploss_value != null && t.stoploss_value > 0
+      ? `${t.stoploss_value}${t.stoploss_type === 'percentage' ? '%' : ' ₹'}`
+      : '–';
+
     const html = `
-      <tr class="hover:bg-gray-800/50">
+      <tr class="hover:bg-gray-800/50" data-id="${t.id}">
         <td class="py-3 px-2 whitespace-nowrap">${displayDate}</td>
         <td class="py-3 px-2 font-medium">${t.ticker}</td>
         <td class="py-3 px-2 ${typeClass} font-semibold">${t.type}</td>
         <td class="py-3 px-2 text-right">${t.quantity}</td>
         <td class="py-3 px-2 text-right">${formatCurrency(t.price, cur)}</td>
         <td class="py-3 px-2 text-right">${formatCurrency(total, cur)}</td>
+        <td class="py-3 px-2 text-right text-gray-300">${targetDisplay}</td>
+        <td class="py-3 px-2 text-right text-gray-300">${slDisplay}</td>
         <td class="py-3 px-2 text-center">
           <button onclick="deleteTransaction('${t.id}')"
             class="text-gray-500 hover:text-rose-500 transition-colors" title="Delete">
@@ -486,7 +659,7 @@ function renderTransactionLog(transactions) {
         </td>
       </tr>
     `;
-    return { date: t.date, ticker: t.ticker, type: t.type, quantity: t.quantity, price: t.price, total, html };
+    return { id: t.id, date: t.date, ticker: t.ticker, type: t.type, quantity: t.quantity, price: t.price, total, currency: cur, target_value: t.target_value, target_type: t.target_type || 'percentage', stoploss_value: t.stoploss_value, stoploss_type: t.stoploss_type || 'percentage', html };
   });
 
   // Apply current sort
@@ -507,13 +680,14 @@ async function renderHoldings(transactions) {
 
   for (const t of sortedTxns) {
     if (!holdingsMap[t.ticker]) {
-      holdingsMap[t.ticker] = { ticker: t.ticker, name: t.name, currency: t.currency || 'INR', totalShares: 0, totalCost: 0, realizedPnl: 0, realizedSells: [] };
+      holdingsMap[t.ticker] = { ticker: t.ticker, name: t.name, currency: t.currency || 'INR', totalShares: 0, totalCost: 0, realizedPnl: 0, realizedSells: [], buyTransactions: [] };
     }
 
     const h = holdingsMap[t.ticker];
     if (t.type === 'BUY') {
       h.totalCost += t.quantity * t.price;
       h.totalShares += t.quantity;
+      h.buyTransactions.push(t);
     } else {
       // SELL: calculate realized P&L using average cost
       const avgCost = h.totalShares > 0 ? h.totalCost / h.totalShares : 0;
@@ -721,9 +895,48 @@ async function renderHoldings(transactions) {
       ? (belowHigh <= 10 ? 'text-emerald-400' : belowHigh <= 25 ? 'text-yellow-400' : 'text-rose-500')
       : 'text-gray-400';
 
+    // Target & Stop Loss indicator
+    let tslIndicator = '';
+    if (currentPrice != null && h.buyTransactions.length > 0) {
+      // Compute weighted-average target/stoploss prices from BUY transactions
+      let targetPrice = null;
+      let stoplossPrice = null;
+      let totalQtyWithTarget = 0;
+      let totalQtyWithSL = 0;
+      let weightedTarget = 0;
+      let weightedSL = 0;
+
+      for (const bt of h.buyTransactions) {
+        if (bt.target_value != null && bt.target_value > 0) {
+          const tp = bt.target_type === 'amount' ? bt.target_value : bt.price * (1 + bt.target_value / 100);
+          weightedTarget += tp * bt.quantity;
+          totalQtyWithTarget += bt.quantity;
+        }
+        if (bt.stoploss_value != null && bt.stoploss_value > 0) {
+          const sl = bt.stoploss_type === 'amount' ? bt.stoploss_value : bt.price * (1 - bt.stoploss_value / 100);
+          weightedSL += sl * bt.quantity;
+          totalQtyWithSL += bt.quantity;
+        }
+      }
+
+      if (totalQtyWithTarget > 0) targetPrice = weightedTarget / totalQtyWithTarget;
+      if (totalQtyWithSL > 0) stoplossPrice = weightedSL / totalQtyWithSL;
+
+      if (targetPrice != null && currentPrice >= targetPrice) {
+        tslIndicator = `<span class="px-1.5 py-0.5 text-[9px] font-bold rounded bg-emerald-600/30 text-emerald-300" title="Target hit! Target: ${formatCurrency(targetPrice, cur)}">🎯T</span>`;
+      }
+      if (stoplossPrice != null && currentPrice <= stoplossPrice) {
+        tslIndicator += `<span class="px-1.5 py-0.5 text-[9px] font-bold rounded bg-rose-600/30 text-rose-300 ml-0.5" title="Stop Loss hit! SL: ${formatCurrency(stoplossPrice, cur)}">⛔SL</span>`;
+      }
+    }
+
     const html = `
       <tr class="hover:bg-gray-800/50">
-        <td class="py-3 px-2 font-medium"><a href="https://in.tradingview.com/symbols/${h.ticker.replace(/\.(NS|BO|BSE)$/i, '')}" target="_blank" class="text-blue-400 hover:text-blue-300 hover:underline">${h.ticker}</a></td>
+        <td class="py-3 px-2 font-medium">
+          <span class="mr-1">${h.ticker}</span>
+          <a href="https://in.tradingview.com/symbols/${h.ticker.replace(/\.(NS|BO|BSE)$/i, '')}" target="_blank" class="text-[10px] bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 px-1.5 py-0.5 rounded transition-colors font-bold inline-block">TV</a>
+          <a href="https://chartink.com/stocks-new?symbol=${h.ticker.replace(/\.(NS|BO|BSE)$/i, '')}" target="_blank" class="text-[10px] bg-purple-600/20 hover:bg-purple-600/40 text-purple-400 px-1.5 py-0.5 rounded transition-colors font-bold inline-block">CI</a>
+        </td>
         <td class="py-3 px-2 text-right">${h.totalShares.toFixed(3)}</td>
         <td class="py-3 px-2 text-right">${formatCurrency(avgPrice, cur)}</td>
         <td class="py-3 px-2 text-right ${priceClass} font-medium">${priceText}</td>
@@ -740,6 +953,7 @@ async function renderHoldings(transactions) {
           <button onclick="prefillTransaction('${h.ticker}', '${h.name.replace(/'/g, "\\'") }', 'BUY', ${currentPrice || 0}, '${currentCur}')" class="text-[10px] bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 px-1.5 py-0.5 rounded transition-colors font-bold">B</button>
           <button onclick="prefillTransaction('${h.ticker}', '${h.name.replace(/'/g, "\\'") }', 'SELL', ${currentPrice || 0}, '${currentCur}')" class="text-[10px] bg-rose-600/20 hover:bg-rose-600/40 text-rose-400 px-1.5 py-0.5 rounded transition-colors font-bold">S</button>
         </td>
+        <td class="py-3 px-2 text-center">${tslIndicator}</td>
       </tr>
     `;
 
@@ -758,6 +972,7 @@ async function renderHoldings(transactions) {
       chandelier: ceText || '',
       ott: ottText === 'BUY' ? 1 : ottText === 'SELL' ? -1 : 0,
       return: returnPct,
+      tsl: tslIndicator.includes('⛔SL') ? 2 : tslIndicator.includes('🎯T') ? 1 : 0,
       html
     };
   });

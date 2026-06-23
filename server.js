@@ -84,7 +84,7 @@ app.get('/api/transactions', async (req, res) => {
 // POST /api/transactions - Add a new transaction
 app.post('/api/transactions', async (req, res) => {
   try {
-    const { ticker, name, type, date, quantity, price, currency, user_id } = req.body;
+    const { ticker, name, type, date, quantity, price, currency, user_id, target_value, target_type, stoploss_value, stoploss_type } = req.body;
 
     if (!ticker || !type || !date || quantity == null || price == null) {
       return res.status(400).json({ error: 'Missing required fields' });
@@ -121,7 +121,11 @@ app.post('/api/transactions', async (req, res) => {
       quantity: parseFloat(quantity),
       price: parseFloat(price),
       currency: currency || 'INR',
-      ...(user_id ? { user_id } : {})
+      ...(user_id ? { user_id } : {}),
+      ...(target_value != null ? { target_value: parseFloat(target_value) } : {}),
+      ...(target_type ? { target_type } : {}),
+      ...(stoploss_value != null ? { stoploss_value: parseFloat(stoploss_value) } : {}),
+      ...(stoploss_type ? { stoploss_type } : {})
     };
 
     const response = await supabaseFetch('transactions', {
@@ -148,6 +152,49 @@ app.post('/api/transactions', async (req, res) => {
     }
   } catch (err) {
     res.status(500).json({ error: 'Failed to save transaction' });
+  }
+});
+
+// PATCH /api/transactions/:id - Update a transaction
+app.patch('/api/transactions/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const allowedFields = ['ticker', 'name', 'type', 'date', 'quantity', 'price', 'currency', 'target_value', 'target_type', 'stoploss_value', 'stoploss_type'];
+    const updates = {};
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        if (field === 'quantity' || field === 'price' || field === 'target_value' || field === 'stoploss_value') {
+          updates[field] = req.body[field] === null || req.body[field] === '' ? null : parseFloat(req.body[field]);
+        } else if (field === 'ticker') {
+          updates[field] = req.body[field].toUpperCase();
+        } else {
+          updates[field] = req.body[field] || null;
+        }
+      }
+    }
+    if (updates.date) {
+      updates.timestamp = Math.floor(new Date(updates.date).getTime() / 1000);
+    }
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    const response = await supabaseFetch(`transactions?id=eq.${id}`, {
+      method: 'PATCH',
+      prefer: 'return=representation',
+      body: JSON.stringify(updates)
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      return res.status(response.status).json({ error: errText });
+    }
+
+    const [updated] = await response.json();
+    if (!updated) return res.status(404).json({ error: 'Transaction not found' });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update transaction' });
   }
 });
 

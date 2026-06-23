@@ -7,7 +7,7 @@ const MULT = 3.0;
 const USE_CLOSE = true;
 
 function calculateCE() {
-    const rawData = fs.readFileSync('Data2.csv', 'utf8').split('\n');
+    const rawData = fs.readFileSync('DATA_RVNL.csv', 'utf8').split('\n');
     // Parse CSV: id,ticker,candle_date,open,high,low,close,updated_at
     const data = rawData.slice(1).map(row => {
         const cols = row.trim().split(',');
