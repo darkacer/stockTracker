@@ -484,10 +484,11 @@ function renderEditableTransactions() {
   });
 
   transactionsBody.innerHTML = sorted.map(t => {
-    const dateVal = t.date && t.date.includes('T') ? t.date.slice(0, 16) : t.date;
+    // Extract just the date part (YYYY-MM-DD) for display
+    let dateVal = (t.date || '').slice(0, 10);
     return `
       <tr class="hover:bg-gray-800/50" data-id="${t.id}">
-        <td class="py-2 px-1"><input type="datetime-local" data-field="date" value="${dateVal}" class="${inputClass} w-[150px]" /></td>
+        <td class="py-2 px-1 text-gray-400 text-xs whitespace-nowrap">${dateVal}</td>
         <td class="py-2 px-1"><input type="text" data-field="ticker" value="${t.ticker}" class="${inputClass} w-[80px] uppercase" /></td>
         <td class="py-2 px-1"><select data-field="type" class="${selectClass}"><option value="BUY" ${t.type === 'BUY' ? 'selected' : ''}>BUY</option><option value="SELL" ${t.type === 'SELL' ? 'selected' : ''}>SELL</option></select></td>
         <td class="py-2 px-1"><input type="number" data-field="quantity" value="${t.quantity}" step="0.001" class="${inputClass} w-[70px] text-right" /></td>
@@ -514,7 +515,6 @@ async function saveOneTransaction(id) {
   };
 
   const fields = {
-    date: getValue('date'),
     ticker: getValue('ticker'),
     type: getValue('type'),
     quantity: getValue('quantity'),
@@ -533,6 +533,7 @@ async function saveOneTransaction(id) {
     });
     if (res.ok) {
       showToast('Transaction updated', 'success');
+      if (fields.ticker) addToWatchlist(fields.ticker.toUpperCase());
       await loadDashboard();
       if (isEditMode) renderEditableTransactions();
     } else {
@@ -558,7 +559,6 @@ async function saveEditedTransactions() {
     };
 
     const fields = {
-      date: getValue('date'),
       ticker: getValue('ticker'),
       type: getValue('type'),
       quantity: getValue('quantity'),
@@ -1371,6 +1371,7 @@ async function confirmCSVImport() {
   btn.textContent = 'Importing...';
 
   let success = 0, failed = 0;
+  const importedTickers = new Set();
   for (const row of validRows) {
     try {
       await apiAddTransaction({
@@ -1382,10 +1383,16 @@ async function confirmCSVImport() {
         price: parseFloat(row.price),
         currency: row.currency || 'INR'
       });
+      importedTickers.add(row.ticker.toUpperCase());
       success++;
     } catch {
       failed++;
     }
+  }
+
+  // Add all imported tickers to watchlist
+  for (const ticker of importedTickers) {
+    addToWatchlist(ticker);
   }
 
   closeImportModal();

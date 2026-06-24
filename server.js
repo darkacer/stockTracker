@@ -193,6 +193,16 @@ app.patch('/api/transactions/:id', async (req, res) => {
     const [updated] = await response.json();
     if (!updated) return res.status(404).json({ error: 'Transaction not found' });
     res.json(updated);
+
+    // Auto-add ticker to stocks_list (fire-and-forget)
+    const tickerToAdd = updates.ticker || updated.ticker;
+    if (tickerToAdd) {
+      supabaseFetch('stocks_list', {
+        method: 'POST',
+        prefer: 'return=minimal, resolution=merge-duplicates',
+        body: JSON.stringify({ ticker: tickerToAdd.toUpperCase() })
+      }).catch(() => {});
+    }
   } catch (err) {
     res.status(500).json({ error: 'Failed to update transaction' });
   }
