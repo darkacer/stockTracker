@@ -147,6 +147,24 @@
   <main class="max-w-[1600px] mx-auto px-6 py-8 space-y-8">
 
     <!-- Summary Cards -->
+    <!-- Market Indices -->
+    <section class="grid grid-cols-2 gap-4">
+      <div class="bg-[#1f2937] rounded-xl p-4 border border-gray-700/50 flex items-center justify-between">
+        <div>
+          <p class="text-[10px] text-gray-500 uppercase tracking-wide">Nifty 50 <span id="nifty-status" class="ml-1"></span></p>
+          <p id="nifty-price" class="text-2xl font-bold mt-0.5">–</p>
+        </div>
+        <p id="nifty-change" class="text-lg font-bold">–</p>
+      </div>
+      <div class="bg-[#1f2937] rounded-xl p-4 border border-gray-700/50 flex items-center justify-between">
+        <div>
+          <p class="text-[10px] text-gray-500 uppercase tracking-wide">Sensex <span id="sensex-status" class="ml-1"></span></p>
+          <p id="sensex-price" class="text-2xl font-bold mt-0.5">–</p>
+        </div>
+        <p id="sensex-change" class="text-lg font-bold">–</p>
+      </div>
+    </section>
+
     <section id="summary-section" class="grid grid-cols-2 md:grid-cols-5 gap-4">
       <div class="bg-[#1f2937] rounded-xl p-5 border border-gray-700/50">
         <p class="text-xs text-gray-400 uppercase tracking-wide">Total Invested</p>

@@ -287,6 +287,8 @@ app.get('/api/stock-lookup/:ticker', async (req, res) => {
             ticker: meta.symbol,
             name: meta.longName || meta.shortName || ticker,
             price: meta.regularMarketPrice,
+            previousClose: meta.previousClose || meta.chartPreviousClose || null,
+            marketState: meta.marketState || null,
             currency
           });
         }

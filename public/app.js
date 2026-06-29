@@ -937,7 +937,7 @@ async function renderHoldings(transactions) {
           <a href="https://in.tradingview.com/symbols/${h.ticker.replace(/\.(NS|BO|BSE)$/i, '')}" target="_blank" class="text-[10px] bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 px-1.5 py-0.5 rounded transition-colors font-bold inline-block">TV</a>
           <a href="https://chartink.com/stocks-new?symbol=${h.ticker.replace(/\.(NS|BO|BSE)$/i, '')}" target="_blank" class="text-[10px] bg-purple-600/20 hover:bg-purple-600/40 text-purple-400 px-1.5 py-0.5 rounded transition-colors font-bold inline-block">CI</a>
         </td>
-        <td class="py-3 px-2 text-right">${h.totalShares.toFixed(3)}</td>
+        <td class="py-3 px-2 text-right">${Math.round(h.totalShares)}</td>
         <td class="py-3 px-2 text-right">${formatCurrency(avgPrice, cur)}</td>
         <td class="py-3 px-2 text-right ${priceClass} font-medium">${priceText}</td>
         <td class="py-3 px-2 text-right ${ma20Class}">${ma20Text}</td>
@@ -1419,5 +1419,60 @@ async function loadAnalysisTimestamps() {
   } catch {}
 }
 
+// --- Live Market Indices (Nifty & Sensex) ---
+let marketIndicesInterval = null;
+
+async function loadMarketIndices() {
+  const indices = [
+    { ticker: '^NSEI', priceEl: 'nifty-price', changeEl: 'nifty-change', statusEl: 'nifty-status', label: 'NSE' },
+    { ticker: '^BSESN', priceEl: 'sensex-price', changeEl: 'sensex-change', statusEl: 'sensex-status', label: 'BSE' }
+  ];
+
+  let anyMarketOpen = false;
+
+  await Promise.all(indices.map(async ({ ticker, priceEl, changeEl, statusEl, label }) => {
+    try {
+      const res = await fetch(`${API_BASE}/stock-lookup/${encodeURIComponent(ticker)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+
+      const priceElement = document.getElementById(priceEl);
+      const changeElement = document.getElementById(changeEl);
+      const statusElement = document.getElementById(statusEl);
+
+      if (priceElement) priceElement.textContent = data.price.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+
+      if (changeElement && data.previousClose) {
+        const changePct = ((data.price - data.previousClose) / data.previousClose) * 100;
+        const sign = changePct >= 0 ? '+' : '';
+        changeElement.textContent = `${sign}${changePct.toFixed(2)}%`;
+        changeElement.className = `text-lg font-bold ${changePct >= 0 ? 'text-emerald-400' : 'text-rose-500'}`;
+      }
+
+      // Market status badge
+      if (statusElement) {
+        const state = data.marketState;
+        const isOpen = state === 'REGULAR';
+        if (isOpen) {
+          anyMarketOpen = true;
+          statusElement.innerHTML = '<span class="inline-block px-1.5 py-0.5 text-[8px] font-bold rounded bg-emerald-600/30 text-emerald-300">LIVE</span>';
+        } else {
+          const stateLabel = state === 'PRE' ? 'PRE-MARKET' : state === 'POST' ? 'CLOSED' : 'CLOSED';
+          statusElement.innerHTML = `<span class="inline-block px-1.5 py-0.5 text-[8px] font-bold rounded bg-gray-600/50 text-gray-400">${stateLabel}</span>`;
+        }
+      }
+    } catch {}
+  }));
+
+  // Adjust refresh interval: 3s when market is open, stop when closed
+  if (anyMarketOpen && !marketIndicesInterval) {
+    marketIndicesInterval = setInterval(loadMarketIndices, 3000);
+  } else if (!anyMarketOpen && marketIndicesInterval) {
+    clearInterval(marketIndicesInterval);
+    marketIndicesInterval = null;
+  }
+}
+
+loadMarketIndices();
 loadAnalysisTimestamps();
 loadUsers().then(() => loadDashboard());
