@@ -34,16 +34,27 @@ function supabaseFetch(path, options = {}) {
 // GET /api/analysis-timestamps - Last CE and OTT analysis run times
 app.get('/api/analysis-timestamps', async (req, res) => {
   try {
-    const response = await supabaseFetch(
-      'stocks_list?algo_chandelier_exit=not.is.null&select=algo_chandelier_exit,algo_ott&limit=1'
+    let ce = null, ott = null;
+
+    // Fetch CE timestamp from any row that has it
+    const ceResponse = await supabaseFetch(
+      'stocks_list?algo_chandelier_exit=not.is.null&select=algo_chandelier_exit&limit=1&order=id.asc'
     );
-    if (!response.ok) return res.json({ ce: null, ott: null });
-    const data = await response.json();
-    const row = data[0] || {};
-    res.json({
-      ce:  row.algo_chandelier_exit?.updatedAt || null,
-      ott: row.algo_ott?.updatedAt || null
-    });
+    if (ceResponse.ok) {
+      const ceData = await ceResponse.json();
+      ce = ceData[0]?.algo_chandelier_exit?.updatedAt || null;
+    }
+
+    // Fetch OTT timestamp from any row that has it
+    const ottResponse = await supabaseFetch(
+      'stocks_list?algo_ott=not.is.null&select=algo_ott&limit=1&order=id.asc'
+    );
+    if (ottResponse.ok) {
+      const ottData = await ottResponse.json();
+      ott = ottData[0]?.algo_ott?.updatedAt || null;
+    }
+
+    res.json({ ce, ott });
   } catch {
     res.json({ ce: null, ott: null });
   }
